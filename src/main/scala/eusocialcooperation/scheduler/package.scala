@@ -8,5 +8,6 @@ package object scheduler {
     Math.pow(Math.sin(2 * Math.PI * x.toDouble), 2) * Math.pow(Math.sin(2 * Math.PI * y.toDouble), 2)
   }
 
+  type Point = (BigDecimal, BigDecimal)
   type Sample = (BigDecimal, BigDecimal, BigDecimal)
 }

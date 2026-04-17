@@ -1,18 +1,19 @@
 import Dependencies._
 
-ThisBuild / scalaVersion     := "2.13.16"
+ThisBuild / scalaVersion     := "3.8.3"
 ThisBuild / version          := "0.1.0-SNAPSHOT"
-ThisBuild / organization     := "com.example"
-ThisBuild / organizationName := "example"
+ThisBuild / organization     := "eusocialcooperation.scheduler"
+ThisBuild / organizationName := "Eusocial Cooperation"
 
 lazy val root = (project in file("."))
   .settings(
     name := "hive-scheduler",
     libraryDependencies ++= Seq(
-      scalatest % Test,
-      pekkoActor,
-      pekkoStream,
-      pekkoActorTestkit % Test
+      scalatest % Test
+      , pekkoActor
+      , pekkoStream
+      , pekkoActorTestkit % Test
+      , scalamock % Test
     )
   )
 
