@@ -10,31 +10,30 @@ object Worker {
 
   type KernelFn = (BigDecimal, BigDecimal) => BigDecimal
 
-  /** (x, y, kernelResult) */
-  type Sample = (BigDecimal, BigDecimal, BigDecimal)
-
   sealed trait Command
   private final case class RemoveDataPoint(dp: DataPoint[Sample]) extends Command
 
-  def apply(kernelFn: KernelFn): Behavior[Command] = Behaviors.setup { ctx =>
+  def apply(kernelFn: KernelFn, dispatcher: ActorRef[Dispatcher.Command]): Behavior[Command] = Behaviors.setup { ctx =>
     val preference = BigDecimal(Random.nextDouble())
+    // TODO: Not sure when to implement this, but this should be referenced by address in the system
     implicit val dpActor: ActorRef[DataPointActor.Create[Sample]] =
       ctx.spawn(DataPointActor[Sample](), "dataPointActor")
-    explorer(kernelFn, preference, Set.empty, dpActor)
+    explorer(kernelFn, preference, Set.empty)
   }
 
   def explorer(
     kernelFn: KernelFn,
     position: BigDecimal,
-    memory: Set[DataPoint[Sample]],
+    memory: Set[DataPoint[Sample]]
+
+    
+  )(implicit
     dpActor: ActorRef[DataPointActor.Create[Sample]]
   ): Behavior[Command] = Behaviors.setup { ctx =>
     val x      = BigDecimal(Random.nextDouble())
     val y      = BigDecimal(Random.nextDouble())
     val result = kernelFn(x, y)
 
-    // TODO: Move this to be generated in the Worker.apply and passed in as an implicit to the explorer and exploiter behaviors; this will allow us to generate the sequence number and timestamp in the DataPointActor.
-    implicit val implicitDpActor: ActorRef[DataPointActor.Create[Sample]] = dpActor
     val dataPoint = DataPoint((x, y, result))
 
     val delaySeconds = (1.0 - result.toDouble).max(0.0)
@@ -44,7 +43,7 @@ object Worker {
 
     Behaviors.receiveMessage {
       case RemoveDataPoint(dp) =>
-        explorer(kernelFn, position, newMemory - dp, dpActor)
+        explorer(kernelFn, position, newMemory - dp)
     }
   }
 

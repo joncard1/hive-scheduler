@@ -7,4 +7,6 @@ package object scheduler {
   def kernel(x: BigDecimal, y: BigDecimal): BigDecimal = {
     Math.pow(Math.sin(2 * Math.PI * x.toDouble), 2) * Math.pow(Math.sin(2 * Math.PI * y.toDouble), 2)
   }
+
+  type Sample = (BigDecimal, BigDecimal, BigDecimal)
 }
