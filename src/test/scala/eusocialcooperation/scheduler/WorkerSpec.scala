@@ -4,12 +4,24 @@ import org.apache.pekko.actor.testkit.typed.scaladsl.{ActorTestKit, BehaviorTest
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
+import scala.concurrent.Await
+import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
+import org.apache.pekko.util.Timeout
+import scala.concurrent.duration.DurationInt
+import org.apache.pekko.actor.typed.Scheduler
+import java.util.concurrent.atomic.AtomicReference
 
 class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 
-  val testKit: ActorTestKit = ActorTestKit()
+  implicit val timeout: Timeout = Timeout(3.seconds)
 
-  override def afterAll(): Unit = testKit.shutdownTestKit()
+  val testKit: ActorTestKit = ActorTestKit()
+  implicit val scheduler: Scheduler = testKit.system.scheduler
+
+  override def afterAll(): Unit = {
+    println("Shutting down test kit in afterAll.")
+    testKit.shutdownTestKit()
+  }
 
   // Kernel that always returns 1.0 so runExplorer sleeps 0 ms in tests
   val testKernelFn: Worker.KernelFn = (_, _) => BigDecimal(1.0)
@@ -26,8 +38,21 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 
   test("Worker stops when it receives a Stop message") {
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
-    worker ! Worker.Stop
+    Await.result(worker.ask(Worker.Stop(_)), 5.seconds)
     testKit.stop(worker)
+  }
+
+  test("Worker handles Stop message when it has started the thread") {
+    implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
+
+    // Need to start a DataPoint worker for the start-up sequence of Worker to find.
+    val dpa = testKit.spawn(DataPointActor[Sample](new AtomicReference[Set[DataPoint[Sample]]](Set.empty)))
+
+    val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
+    // Wait for the worker to finish starting.
+    Thread.sleep(1500) // Wait for the scheduled job to execute
+    testKit.stop(worker)
+    Thread.sleep(500) // Wait for the worker to process the stop message and shut down
   }
 
 /*

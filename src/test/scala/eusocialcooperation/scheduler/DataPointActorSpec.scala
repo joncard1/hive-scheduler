@@ -9,6 +9,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import org.scalatest.matchers.should.Matchers
+import java.util.concurrent.atomic.AtomicReference
+import eusocialcooperation.scheduler.DataPoint.Phase
 
 class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 
@@ -20,20 +22,22 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
   test("DataPointActor replies with a DataPoint wrapping the given value") {
-    val actor = testKit.spawn(DataPointActor[String]())
+    val memory = new AtomicReference[Set[DataPoint[String]]](Set.empty)
+    val actor = testKit.spawn(DataPointActor[String](memory))
 
     val result = Await.result(
-      actor.ask[DataPoint[String]](DataPointActor.Create("hello", _)),
+      actor.ask[DataPoint[String]](DataPointActor.Create("hello", Phase.Explorer, "name", _)),
       3.seconds
     )
     result.value shouldEqual "hello"
   }
 
   test("DataPointActor works with a non-String type") {
-    val actor = testKit.spawn(DataPointActor[Int]())
+    val memory = new AtomicReference[Set[DataPoint[Int]]](Set.empty)
+    val actor = testKit.spawn(DataPointActor[Int](memory))
 
     val result = Await.result(
-      actor.ask[DataPoint[Int]](DataPointActor.Create(42, _)),
+      actor.ask[DataPoint[Int]](DataPointActor.Create(42, Phase.Explorer, "name", _)),
       3.seconds
     )
 
@@ -41,16 +45,18 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
   }
 
   test ("DataPointActor increments sequence number") {
-    val actor = testKit.spawn(DataPointActor[String]())
+    val memory = new AtomicReference[Set[DataPoint[String]]](Set.empty)
+
+    val actor = testKit.spawn(DataPointActor[String](memory))
 
     val result1 = Await.result(
-      actor.ask[DataPoint[String]](DataPointActor.Create("first", _)),
+      actor.ask[DataPoint[String]](DataPointActor.Create("first", Phase.Explorer, "name", _)),
       3.seconds
     )
     result1.sequenceNumber shouldEqual 0
 
     val result2 = Await.result(
-      actor.ask[DataPoint[String]](DataPointActor.Create("second", _)),
+      actor.ask[DataPoint[String]](DataPointActor.Create("second", Phase.Explorer, "name", _)),
       3.seconds
     )
     result2.sequenceNumber shouldEqual 1

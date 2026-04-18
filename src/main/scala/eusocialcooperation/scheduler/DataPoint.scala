@@ -1,17 +1,30 @@
 package eusocialcooperation.scheduler
 
 import org.apache.pekko.actor.typed.ActorRef
+import org.apache.pekko.actor.typed.scaladsl.AskPattern._
+import org.apache.pekko.actor.typed.Scheduler
+import org.apache.pekko.util.Timeout
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.Await
+import org.apache.pekko.actor.typed.Scheduler
 
 object DataPoint {
-    // TODO add access to the actor to generate the sequence number and timestamp
-    def apply[A](value: A)(implicit system: ActorRef[DataPointActor.Create[A]]): DataPoint[A] = {
-        new DataPoint(0, System.currentTimeMillis(), value)
+    enum Phase:
+        case Explorer, Exploiter
+
+    // TODO add a reference to the current actor or possibly thread ID
+    def apply[A](value: A, worker: String, phase: Phase)(implicit dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPoint[A] = {
+        implicit val timeout: Timeout = Timeout(3.seconds)
+
+        Await.result(dpa.ask[DataPoint[A]](replyTo => DataPointActor.Create(value, phase, worker, replyTo)), 3.seconds)
     }
 }
 
 class DataPoint[A] (
     val sequenceNumber: Long,
     val timestamp: Long,
+    val actorName: String,
+    val phase: DataPoint.Phase,
     val value: A
 ) {
     def flatMap[B](f: A => DataPoint[B]): DataPoint[B] = {

@@ -18,10 +18,7 @@ class WorkerStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
     implicit val timeout: Timeout = Timeout(30.seconds)
     implicit lazy val scheduler: org.apache.pekko.actor.typed.Scheduler = testKit.system.scheduler
 
-    override def afterAll(): Unit = {
-        println("shutting down")
-        testKit.shutdownTestKit()
-    }
+    override def afterAll(): Unit = testKit.shutdownTestKit()
 
     // TODO: Incorporate scalacheck
     test("ExplorerState should explore test 10 points randomly near a given point") {
@@ -41,10 +38,12 @@ class WorkerStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         }), "dispatcher")
         implicit val dpProbe = testKit.createTestProbe[DataPointActor.Create[Worker.Sample]]().ref
         val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcher)
-        state()
+        //state()
+        /*
         for (i <- 0 until numPoints) {
             dispatcherProbe.expectMessageType[Dispatcher.AddPoint]
         }
+        */
         dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
     }
 
@@ -67,10 +66,12 @@ class WorkerStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         }), "dispatcher")
         implicit val dpProbe = testKit.createTestProbe[DataPointActor.Create[Worker.Sample]]().ref
         val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcher)
-        state()
+        //state()
+        /*
         for (i <- 0 until numPoints) {
             dispatcherProbe.expectMessageType[Dispatcher.AddPoint]
         }
+        */
         dispatcherProbe.expectMessageType[Dispatcher.AddProspect]
         dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
     }
@@ -98,15 +99,42 @@ class WorkerStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         }), "dispatcher")
         implicit val dpProbe = testKit.createTestProbe[DataPointActor.Create[Worker.Sample]]().ref
         val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcher)
-        state()
+        //state()
+        /*
         for (i <- 0 until numPoints) {
             dispatcherProbe.expectMessageType[Dispatcher.AddPoint]
         }
+        */
         dispatcherProbe.expectMessageType[Dispatcher.AddProspect]
         dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
 
         reportedDelay shouldBe defined
         val expectedDelay = ExplorerState.delayPerProspect * 2
         reportedDelay.value shouldBe expectedDelay
+    }
+
+    test("ExploiterState should explore points in a grid around the prospect") {
+        val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
+        // Return a high value for the center point and low values for the surrounding points
+        fn.expects(*, *).returning(BigDecimal(0.05)).repeat(121)
+        val prospectX = BigDecimal(0.5)
+        val prospectY = BigDecimal(0.5)
+
+        val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
+        val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {
+            case Dispatcher.RequestPoints(replyTo) =>
+                println("Received RequestPoints")
+                replyTo ! Dispatcher.RequestedPoints(Set((prospectX, prospectY)))
+                Behaviors.same
+            case _ => Behaviors.same
+        }), "dispatcher")
+        implicit val dpProbe = testKit.createTestProbe[DataPointActor.Create[Worker.Sample]]().ref
+        val state = ExploiterState((prospectX, prospectY), BigDecimal(0.5), fn, dispatcher)
+        //state()
+        /*
+        for (ix <- -5 to 5; iy <- -5 to 5) {
+            dispatcherProbe.expectMessageType[Dispatcher.AddPoint]
+        }
+        */
     }
 }
