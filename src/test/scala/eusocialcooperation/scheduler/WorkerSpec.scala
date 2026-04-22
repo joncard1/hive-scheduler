@@ -10,8 +10,10 @@ import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.Scheduler
 import java.util.concurrent.atomic.AtomicReference
+import com.typesafe.config.Config
+import org.scalamock.scalatest.MockFactory
 
-class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
+class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory {
 
   implicit val timeout: Timeout = Timeout(3.seconds)
 
@@ -31,12 +33,20 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 
 // TODO: Not convinced that this will stop the internal thread when stopped without the Stop command. Look up how this message would be communicated normally. I think there's some kind of subscription you have to make.
   test("Worker can be spawned with a kernel function and dispatcher") {
+    implicit val config: Config = mock[Config]
+    val workerConfig = mock[Config]
+    (config.getConfig).expects("workers").returns(workerConfig)
+    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
     worker should not be null
     testKit.stop(worker)
   }
 
   test("Worker stops when it receives a Stop message") {
+    implicit val config: Config = mock[Config]
+    val workerConfig = mock[Config]
+    (config.getConfig).expects("workers").returns(workerConfig)
+    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
     Await.result(worker.ask(Worker.Stop(_)), 5.seconds)
     testKit.stop(worker)
@@ -44,6 +54,10 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 
   test("Worker handles Stop message when it has started the thread") {
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
+    implicit val config: Config = mock[Config]
+    val workerConfig = mock[Config]
+    (config.getConfig).expects("workers").returns(workerConfig)
+    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
 
     // Need to start a DataPoint worker for the start-up sequence of Worker to find.
     val dpa = testKit.spawn(DataPointActor[Sample](new AtomicReference[Set[DataPoint[Sample]]](Set.empty)))
@@ -76,6 +90,11 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
   */
 
   test("Worker accepts different kernel functions") {
+    implicit val config: Config = mock[Config]
+    val workerConfig = mock[Config]
+    (config.getConfig).expects("workers").returns(workerConfig)
+    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
+
     val alternateKernel: Worker.KernelFn = (x, y) => (x + y) / 2
     val worker = testKit.spawn(Worker(alternateKernel, dispatcherProbe.ref))
     worker should not be null

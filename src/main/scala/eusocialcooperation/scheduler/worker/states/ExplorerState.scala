@@ -1,0 +1,143 @@
+package eusocialcooperation.scheduler.worker.states
+
+import eusocialcooperation.scheduler._
+import org.apache.pekko.actor.typed.ActorRef
+import org.apache.pekko.actor.typed.scaladsl.ActorContext
+import org.apache.pekko.actor.typed.Scheduler
+import scala.util.Random
+import eusocialcooperation.scheduler.worker.states.ExplorerState.State
+import eusocialcooperation.scheduler.DataPoint.Phase
+import com.typesafe.config.Config
+
+object ExplorerState {
+    enum State {
+        case LookingForFirstLowValue, LookingForHighValueAfterLow, NextState
+    }
+    /**
+      * The number of points to explore before choosing whether to transition to the exploiter state or to continue exploring. This is a hyperparameter that may require tuning.
+      */
+    //val numPointsToExplore = 10
+    /**
+     * The threshold below which a point is considered promising enough to be sent to the dispatcher as a prospect. This is a hyperparameter that may require tuning.
+     */
+    // val threshold = BigDecimal(0.05)
+    /**
+      * The radius around the current location the next randomly selected point will be located. This is a hyperparameter that may require tuning.
+      */
+    // val explorationRadius = BigDecimal(0.01)
+
+    /** Number of milliseconds to delay a prospect for each point in the explorer's memory. This is a hyperparameter that may require tuning. */
+    // val delayPerProspect = 10L
+}
+
+case class ExplorerState(
+    startLocation: Point,
+    kernelFn: Worker.KernelFn,
+    preference: BigDecimal
+    , dispatcher: ActorRef[Dispatcher.Command]
+    , remainingSteps: Option[Int] = None
+    , state: State = State.LookingForFirstLowValue
+    , memory: Set[Point] = Set.empty) extends WorkerState with LoggingComponent{
+
+    override def apply()(using sampleRef: ActorRef[DataPointActor.Create[Sample]], pointRef: ActorRef[DataPointActor.Create[Point]], scheduler: Scheduler, config: Config): WorkerState = {
+        logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
+    
+        val numStepsToExplore = config.getInt("explorer.numPointsToExplore")
+        val explorationRadius = config.getDouble("explorer.explorationRadius")
+        val threshold = config.getDouble("explorer.threshold")
+        val delayPerProspect = config.getLong("explorer.delayPerProspect")
+        val remainingStepsToUse = remainingSteps.getOrElse(numStepsToExplore)
+
+        var (x, y) = startLocation
+        
+        // Explore a certain number of points.
+        val result = kernelFn(x, y)
+        val res = DataPoint((x, y, result), Thread.currentThread().getName(), DataPoint.Phase.Explorer)
+
+        //dispatcher ! Dispatcher.AddPoint(res)
+        var angleMin = 0.0
+        var angleMax = 2 * Math.PI
+        if ((x - explorationRadius < 0.0) && (y - explorationRadius < 0.0)) {
+            angleMin = 0.0
+            angleMax = Math.PI / 2
+        } else if ((x + explorationRadius > 1.0) && (y - explorationRadius < 0.0)) {
+            angleMin = Math.PI / 2
+            angleMax = Math.PI
+        } else if (y - explorationRadius < 0.0) {
+            angleMin = 0.0
+            angleMax = Math.PI
+        } else if (x + explorationRadius > 1.0) {
+            angleMin = Math.PI / 2
+            angleMax = 3 * Math.PI / 2
+        } else if ((x - explorationRadius < 0.0) && (y + explorationRadius > 1.0)) {
+            angleMin = Math.PI
+            angleMax = 3 * Math.PI / 2
+        } else if ((x + explorationRadius > 1.0) && (y + explorationRadius > 1.0)) {
+            angleMin = 3 * Math.PI / 2
+            angleMax = 2 * Math.PI
+        } else if ((y + explorationRadius > 1.0)) {
+            angleMin = Math.PI
+            angleMax = 2 * Math.PI
+        } else if ((x - explorationRadius < 0.0)) {
+            angleMin = -Math.PI / 2
+            angleMax = Math.PI / 2
+        } else if ((x + explorationRadius > 1.0)) {
+            angleMin = Math.PI / 2
+            angleMax = 3 * Math.PI / 2
+        }
+
+        val angle = Random.between(angleMin, angleMax)
+        x = x + explorationRadius * Math.cos(angle)
+        y = y + explorationRadius * Math.sin(angle)
+        
+        val newPoint = (x, y)
+        
+        var newMemory = memory
+        val newState = state match
+            case _ if result < threshold => 
+                logger.info("Found a point below the threshold: {}, adding to memory and continuing to look for more points below the threshold.", result)
+                newMemory = memory + (newPoint)
+                State.LookingForHighValueAfterLow
+            case State.LookingForFirstLowValue =>
+                State.LookingForFirstLowValue
+            case State.LookingForHighValueAfterLow if result < threshold =>
+                newMemory = memory + (newPoint)
+                State.LookingForHighValueAfterLow
+            case State.LookingForHighValueAfterLow =>
+                if (memory.nonEmpty) {
+                    memory.fold[Point]((BigDecimal(0.0), BigDecimal(0.0)))((acc, sample) => (acc._1 + sample._1, acc._2 + sample._2)) match {
+                        case (sumX, sumY) =>
+                            val numSamples = memory.size
+                            val avgX = sumX / numSamples
+                            val avgY = sumY / numSamples
+                            val prospect = DataPoint((avgX, avgY), Thread.currentThread().getName(), Phase.Explorer)
+                            // TODO: Refactor out the calculation of the delay to make clear this could be non-linear
+                            dispatcher ! Dispatcher.AddProspect(prospect, delayPerProspect * numSamples)
+                    }
+                }
+                State.NextState
+            case State.NextState =>
+                throw new RuntimeException("ExplorerState should not be in NextState state during exploration.")
+
+        // TODO: If in the LookingForHighValueAterLow, maybe just continue exploring until we find a high value
+        newState match
+            case State.LookingForHighValueAfterLow =>
+                logger.info("New state is still looking, keeping state")
+                this.copy(startLocation = newPoint, remainingSteps = Option(Math.max(0, remainingStepsToUse - 1)), state = newState, memory = newMemory)
+            case State.NextState => // These two states should be the same, but "|" doesn't work with an "if" clause
+                logger.info("Found a high, moving to another state.")
+                chooseState(
+                    () => ExplorerState(newPoint, kernelFn, this.preference, dispatcher),
+                    (prospect) => ExploiterState(prospect, preference, kernelFn, dispatcher)
+                )
+            case _ if remainingStepsToUse <= 0 =>
+                logger.info("Ran out of steps, moving to another state")
+                chooseState(
+                    () => ExplorerState(newPoint, kernelFn, this.preference, dispatcher),
+                    (prospect) => ExploiterState(prospect, preference, kernelFn, dispatcher)
+                )
+            case _ =>
+                logger.info("Continuing exploration, decrementing remaining steps")
+                this.copy(startLocation = newPoint, remainingSteps = Option(remainingStepsToUse - 1), state = newState, memory = newMemory)
+    }
+}
