@@ -14,8 +14,9 @@ object DataPoint {
         case Explorer, Exploiter
 
     // TODO add a reference to the current actor or possibly thread ID
-    def apply[A](value: A, worker: String, phase: Phase, parent: Option[DataPoint[?]] = None)(implicit dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPoint[A] = {
+    def apply[A](value: A)(implicit dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler, phase: Phase, parent: Option[DataPoint[?]] = None): DataPoint[A] = {
         implicit val timeout: Timeout = Timeout(3.seconds)
+        val worker: String = Thread.currentThread().getName
 
         //println(s"Creating DataPoint with value: $value, worker: $worker, phase: $phase")
         Await.result(dpa.ask[DataPoint[A]](replyTo => DataPointActor.Create(value, phase, worker, replyTo, parent)), 3.seconds)

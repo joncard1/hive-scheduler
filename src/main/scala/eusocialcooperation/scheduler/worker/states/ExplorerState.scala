@@ -13,6 +13,7 @@ object ExplorerState {
     enum State {
         case LookingForFirstLowValue, LookingForHighValueAfterLow, NextState
     }
+
     /**
       * The number of points to explore before choosing whether to transition to the exploiter state or to continue exploring. This is a hyperparameter that may require tuning.
       */
@@ -35,24 +36,28 @@ case class ExplorerState(
     kernelFn: Worker.KernelFn,
     preference: BigDecimal
     , dispatcher: ActorRef[Dispatcher.Command]
-    , remainingSteps: Option[Int] = None
+    , var remainingSteps: Option[Int] = None
     , state: State = State.LookingForFirstLowValue
-    , memory: Set[Point] = Set.empty) extends WorkerState with LoggingComponent{
+    , memory: Set[Point] = Set.empty)(implicit config: Config) extends WorkerState with LoggingComponent{
+
+    given phase: DataPoint.Phase = DataPoint.Phase.Explorer
+    given pointParent: Option[DataPoint[?]] = None
+
+    val numStepsToExplore = config.getInt("explorer.numPointsToExplore")
+    val explorationRadius = config.getDouble("explorer.explorationRadius")
+    val threshold = config.getDouble("explorer.threshold")
+    val delayPerProspect = config.getInt("explorer.delayPerProspectMs")
+
+    remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 
     override def apply()(using sampleRef: ActorRef[DataPointActor.Create[Sample]], pointRef: ActorRef[DataPointActor.Create[Point]], scheduler: Scheduler, config: Config): WorkerState = {
         logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
     
-        val numStepsToExplore = config.getInt("explorer.numPointsToExplore")
-        val explorationRadius = config.getDouble("explorer.explorationRadius")
-        val threshold = config.getDouble("explorer.threshold")
-        val delayPerProspect = config.getLong("explorer.delayPerProspect")
-        val remainingStepsToUse = remainingSteps.getOrElse(numStepsToExplore)
-
         var (x, y) = startLocation
         
         // Explore a certain number of points.
         val result = kernelFn(x, y)
-        val res = DataPoint((x, y, result), Thread.currentThread().getName(), DataPoint.Phase.Explorer)
+        val res = DataPoint((x, y, result))
 
         //dispatcher ! Dispatcher.AddPoint(res)
         var angleMin = 0.0
@@ -110,7 +115,7 @@ case class ExplorerState(
                             val numSamples = memory.size
                             val avgX = sumX / numSamples
                             val avgY = sumY / numSamples
-                            val prospect = DataPoint((avgX, avgY), Thread.currentThread().getName(), Phase.Explorer)
+                            val prospect = DataPoint((avgX, avgY))
                             // TODO: Refactor out the calculation of the delay to make clear this could be non-linear
                             dispatcher ! Dispatcher.AddProspect(prospect, delayPerProspect * numSamples)
                     }
@@ -123,14 +128,14 @@ case class ExplorerState(
         newState match
             case State.LookingForHighValueAfterLow =>
                 logger.info("New state is still looking, keeping state")
-                this.copy(startLocation = newPoint, remainingSteps = Option(Math.max(0, remainingStepsToUse - 1)), state = newState, memory = newMemory)
+                this.copy(startLocation = newPoint, remainingSteps = Option(Math.max(0, remainingSteps.get - 1)), state = newState, memory = newMemory)
             case State.NextState => // These two states should be the same, but "|" doesn't work with an "if" clause
                 logger.info("Found a high, moving to another state.")
                 chooseState(
                     () => ExplorerState(newPoint, kernelFn, this.preference, dispatcher),
                     (prospect) => ExploiterState(prospect, preference, kernelFn, dispatcher)
                 )
-            case _ if remainingStepsToUse <= 0 =>
+            case _ if remainingSteps.get <= 0 =>
                 logger.info("Ran out of steps, moving to another state")
                 chooseState(
                     () => ExplorerState(newPoint, kernelFn, this.preference, dispatcher),
@@ -138,6 +143,6 @@ case class ExplorerState(
                 )
             case _ =>
                 logger.info("Continuing exploration, decrementing remaining steps")
-                this.copy(startLocation = newPoint, remainingSteps = Option(remainingStepsToUse - 1), state = newState, memory = newMemory)
+                this.copy(startLocation = newPoint, remainingSteps = Option(remainingSteps.get - 1), state = newState, memory = newMemory)
     }
 }

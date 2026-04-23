@@ -36,7 +36,9 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
+    //(workerConfig.hasPath).expects("loopDelayMs").returning(true).atLeastOnce()
+    //(workerConfig.getLong).expects("loopDelayMs").returning(Worker.defaultLoopDelayMs).atLeastOnce()
+    
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
     worker should not be null
     testKit.stop(worker)
@@ -46,7 +48,8 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
+    (workerConfig.hasPath).expects("loopDelayMs").returning(true).atLeastOnce()
+    (workerConfig.getLong).expects("loopDelayMs").returning(Worker.defaultLoopDelayMs).atLeastOnce()
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
     Await.result(worker.ask(Worker.Stop(_)), 5.seconds)
     testKit.stop(worker)
@@ -57,7 +60,8 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
+    (workerConfig.hasPath).expects("loopDelayMs").returning(true).atLeastOnce()
+    (workerConfig.getLong).expects("loopDelayMs").returning(Worker.defaultLoopDelayMs).atLeastOnce()
 
     // Need to start a DataPoint worker for the start-up sequence of Worker to find.
     val dpa = testKit.spawn(DataPointActor[Sample](new AtomicReference[Set[DataPoint[Sample]]](Set.empty)))
@@ -93,7 +97,6 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getLong).expects("workerLoopDelayMs").returning(Worker.defaultLoopDelayMs)
 
     val alternateKernel: Worker.KernelFn = (x, y) => (x + y) / 2
     val worker = testKit.spawn(Worker(alternateKernel, dispatcherProbe.ref))

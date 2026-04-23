@@ -71,7 +71,7 @@ object Worker {
       val loopDelayMs = {
         // TODO: There's a concept in typesafe config of reference.conf, I think, that handles defaults more simply than this, but idk
         if (config.hasPath("loopDelayMs")) {
-          config.getInt("loopDelayMs").toLong
+          config.getLong("loopDelayMs").toLong
         } else {
           Worker.defaultLoopDelayMs
         }
