@@ -10,6 +10,10 @@ import eusocialcooperation.scheduler.DataPoint.Phase
 import com.typesafe.config.Config
 
 object ExplorerState {
+    val numPointsToExploreConfigKey = "explorer.numPointsToExplore"
+    val explorationRadiusConfigKey = "explorer.explorationRadius"
+    val thresholdConfigKey = "explorer.threshold"
+    val delayPerProspectConfigKey = "explorer.delayPerProspect"
     enum State {
         case LookingForFirstLowValue, LookingForHighValueAfterLow, NextState
     }
@@ -43,10 +47,10 @@ case class ExplorerState(
     given phase: DataPoint.Phase = DataPoint.Phase.Explorer
     given pointParent: Option[DataPoint[?]] = None
 
-    val numStepsToExplore = config.getInt("explorer.numPointsToExplore")
-    val explorationRadius = config.getDouble("explorer.explorationRadius")
-    val threshold = config.getDouble("explorer.threshold")
-    val delayPerProspect = config.getInt("explorer.delayPerProspectMs")
+    val numStepsToExplore = config.getInt(ExplorerState.numPointsToExploreConfigKey)
+    val explorationRadius = config.getDouble(ExplorerState.explorationRadiusConfigKey)
+    val threshold = config.getDouble(ExplorerState.thresholdConfigKey)
+    val delayPerProspect = config.getMilliseconds(ExplorerState.delayPerProspectConfigKey)
 
     remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 

@@ -48,7 +48,7 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getLong).expects("loopDelayMs").returning(defaultLoopDelayMs).atLeastOnce()
+    (workerConfig.getMilliseconds).expects(Worker.loopDelayConfigKey).returning(defaultLoopDelayMs).atLeastOnce()
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
     Await.result(worker.ask(Worker.Stop(_)), 5.seconds)
     testKit.stop(worker)
@@ -59,7 +59,7 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getLong).expects("loopDelayMs").returning(defaultLoopDelayMs).atLeastOnce()
+    (workerConfig.getMilliseconds).expects(Worker.loopDelayConfigKey).returning(defaultLoopDelayMs).atLeastOnce()
 
     // Need to start a DataPoint worker for the start-up sequence of Worker to find.
     val dpa = testKit.spawn(DataPointActor[Sample](new AtomicReference[Set[DataPoint[Sample]]](Set.empty)))
@@ -94,7 +94,7 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
   test("Worker accepts different kernel functions") {
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
-    (config.getConfig).expects("workers").returns(workerConfig)
+    (config.getConfig).expects(Worker.workersConfigKey).returns(workerConfig)
 
     val alternateKernel: Worker.KernelFn = (x, y) => (x + y) / 2
     val worker = testKit.spawn(Worker(alternateKernel, dispatcherProbe.ref))

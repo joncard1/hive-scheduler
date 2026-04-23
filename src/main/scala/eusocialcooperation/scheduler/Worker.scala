@@ -21,6 +21,9 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
 
 object Worker {
 
+  val workersConfigKey = "workers"
+  val loopDelayConfigKey = "loopDelay"
+
   type KernelFn = (BigDecimal, BigDecimal) => BigDecimal
 
   /** (x, y, kernelResult) */
@@ -55,7 +58,7 @@ object Worker {
         pointKey,
         adapter
       )
-      waitingForDpActors(kernelFn, dispatcher)(using ctx, config.getConfig("workers"))
+      waitingForDpActors(kernelFn, dispatcher)(using ctx, config.getConfig(Worker.workersConfigKey))
     }
 
   private def waitingForDpActors(
@@ -65,7 +68,7 @@ object Worker {
     , pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
   )(implicit context: ActorContext[?], config: Config): Behavior[Command] =
     Behaviors.receiveMessage[Command] { msg =>
-      val loopDelayMs = config.getLong("loopDelayMs")
+      val loopDelayMs = config.getMilliseconds(Worker.loopDelayConfigKey)
       def createNextState(
         kernelFn: KernelFn
         , dispatcher: ActorRef[Dispatcher.Command]

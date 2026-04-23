@@ -20,6 +20,7 @@ import eusocialcooperation.scheduler.worker.states.ExplorerState.State
 import scala.util.Using
 import scala.util.Try
 import com.typesafe.config.Config
+import eusocialcooperation.scheduler.DataPoint.Phase
 
 class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory with OptionValues {
     val testKit: ActorTestKit = ActorTestKit()
@@ -28,17 +29,17 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
     implicit lazy val scheduler: Scheduler = testKit.system.scheduler
 
     val numSteps = 10
-    val delayPerProspect = 50
+    val delayPerProspect = 50L
     val explorationRadius = 0.01
     val threshold = 0.05   
 
     def getConfig() = {
         val config: Config = mock[Config]
          
-        (config.getInt).expects("explorer.numPointsToExplore").returning(numSteps).atLeastOnce()
-        (config.getInt).expects("explorer.delayPerProspectMs").returning(delayPerProspect).atLeastOnce()
-        (config.getDouble).expects("explorer.explorationRadius").returning(explorationRadius).atLeastOnce()
-        (config.getDouble).expects("explorer.threshold").returning(threshold).atLeastOnce()
+        (config.getInt).expects(ExplorerState.numPointsToExploreConfigKey).returning(numSteps).atLeastOnce()
+        (config.getMilliseconds).expects(ExplorerState.delayPerProspectConfigKey).returning(delayPerProspect).atLeastOnce()
+        (config.getDouble).expects(ExplorerState.explorationRadiusConfigKey).returning(explorationRadius).atLeastOnce()
+        (config.getDouble).expects(ExplorerState.thresholdConfigKey).returning(threshold).atLeastOnce()
         config
     }
     
@@ -173,8 +174,8 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
     test("ExplorerState should submit a prospect after finding a high value after a low value and transition to an exploiter state") {
         given config: Config = getConfig()
-        (config.getDouble).expects("exploiter.fuzziness").returning(0.01)
-        (config.getDouble).expects("exploiter.increment").returning(0.001).atLeastOnce()
+        (config.getDouble).expects(ExploiterState.fuzzinessConfigKey).returning(0.01)
+        (config.getDouble).expects(ExploiterState.incrementConfigKey).returning(0.001).atLeastOnce()
 
         val point1 = (BigDecimal(0.1), BigDecimal(0.1))
         val point2 = (BigDecimal(0.2), BigDecimal(0.2))
