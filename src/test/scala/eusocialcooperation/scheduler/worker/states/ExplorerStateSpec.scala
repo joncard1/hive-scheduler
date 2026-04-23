@@ -174,6 +174,7 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
     test("ExplorerState should submit a prospect after finding a high value after a low value and transition to an exploiter state") {
         given config: Config = getConfig()
         (config.getDouble).expects("exploiter.fuzziness").returning(0.01)
+        (config.getDouble).expects("exploiter.increment").returning(0.001).atLeastOnce()
 
         val point1 = (BigDecimal(0.1), BigDecimal(0.1))
         val point2 = (BigDecimal(0.2), BigDecimal(0.2))

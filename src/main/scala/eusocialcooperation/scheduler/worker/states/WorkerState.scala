@@ -28,7 +28,7 @@ trait WorkerState extends LoggingComponent {
       */
     val dispatcher: ActorRef[Dispatcher.Command]
 
-    def apply()(using ActorRef[DataPointActor.Create[Sample]], ActorRef[DataPointActor.Create[Point]],Scheduler, Config):  WorkerState = ???
+    def apply()(using ActorRef[DataPointActor.Create[Sample]], ActorRef[DataPointActor.Create[Point]],Scheduler):  WorkerState = ???
 
     def chooseState(createExplorer: () => WorkerState, createExploiter: (DataPoint[Point]) => WorkerState)(implicit scheduler: Scheduler): WorkerState = {
         // TODO: Maybe make this an implicit parameter

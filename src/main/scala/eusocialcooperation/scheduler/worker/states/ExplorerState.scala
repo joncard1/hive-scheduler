@@ -50,7 +50,7 @@ case class ExplorerState(
 
     remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 
-    override def apply()(using sampleRef: ActorRef[DataPointActor.Create[Sample]], pointRef: ActorRef[DataPointActor.Create[Point]], scheduler: Scheduler, config: Config): WorkerState = {
+    override def apply()(using sampleRef: ActorRef[DataPointActor.Create[Sample]], pointRef: ActorRef[DataPointActor.Create[Point]], scheduler: Scheduler): WorkerState = {
         logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
     
         var (x, y) = startLocation

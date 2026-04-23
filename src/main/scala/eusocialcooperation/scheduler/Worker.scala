@@ -21,9 +21,6 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
 
 object Worker {
 
-  // TODO: Consider making this configuration-driven or dynamically adjustable at runtime
-  val defaultLoopDelayMs = 50L
-
   type KernelFn = (BigDecimal, BigDecimal) => BigDecimal
 
   /** (x, y, kernelResult) */
@@ -68,14 +65,7 @@ object Worker {
     , pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
   )(implicit context: ActorContext[?], config: Config): Behavior[Command] =
     Behaviors.receiveMessage[Command] { msg =>
-      val loopDelayMs = {
-        // TODO: There's a concept in typesafe config of reference.conf, I think, that handles defaults more simply than this, but idk
-        if (config.hasPath("loopDelayMs")) {
-          config.getLong("loopDelayMs").toLong
-        } else {
-          Worker.defaultLoopDelayMs
-        }
-      }
+      val loopDelayMs = config.getLong("loopDelayMs")
       def createNextState(
         kernelFn: KernelFn
         , dispatcher: ActorRef[Dispatcher.Command]
@@ -117,7 +107,7 @@ object Worker {
         case DPActorListing(actors) if actors.isForKey(DataPointActor.DataPointActorKey[Point]) =>
           createNextState(kernelFn, dispatcher, sampleActor, None)
         case Stop(replyTo) =>
-          context.log.info(s"Worker ${context.self.path.name} stopping.")
+          context.log.info(s"Worker ${context.self.path.name} stopping while waiting for DataPointActors.")
           replyTo ! Done
           Behaviors.stopped
         case event =>
@@ -139,9 +129,10 @@ object Worker {
   )(implicit context: ActorContext[?], config: Config): Behavior[Command] =
     Behaviors.receiveMessage[Command] {
       case Stop(replyTo) =>
-        //println(s"Worker ${context.self.path.name} stopping.")
+        println(s"Worker ${context.self.path.name} stopping from message.")
         running.set(false)
         thread.join()
+        println(s"Worker ${context.self.path.name} stopped from message.")
         replyTo ! Done
         Behaviors.stopped
 
@@ -154,9 +145,10 @@ object Worker {
     }.receiveSignal {
       // TODO: Consider watching fro PreRestart, also. Not sure if that would re-run setup. Probably.
       case (_, PostStop) =>
-        //println(s"Worker ${context.self.path.name} stopping.")
+        println(s"Worker ${context.self.path.name} stopping from signal.")
         running.set(false)
         thread.join()
+        println(s"Worker ${context.self.path.name} stopped from signal.")
         Behaviors.same
       case event =>
         //println(s"Worker received unexpected signal: $event")
