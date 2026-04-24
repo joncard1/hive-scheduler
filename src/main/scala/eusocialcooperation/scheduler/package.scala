@@ -1,6 +1,9 @@
 package eusocialcooperation
 
 package object scheduler {
+  val experimentConfigurationFileName = "experiment.conf"
+  val experimentConfigPath = "config/"
+
     /**
      * The kernel function used to demonstrate the search space.
      */

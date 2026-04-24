@@ -28,28 +28,31 @@ import org.apache.pekko.util.Timeout
 import org.apache.pekko.actor.typed.Scheduler
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import com.typesafe.config.Config
+import org.slf4j.MDC
 
-@main def Demo(): Unit = {
-    // TODO: Move this to an environment variable or a command-line argument, and make it more flexible (e.g. allow specifying the kernel function, the exploration radius, the worker preference, etc.) so that the application.conf and the output path are tied together somehow to keep experiment output and the experiment parameters together.
-    val defaultExperimentPath = "experiment/"
+@main def Demo(experimentPath: String): Unit = {
+    // TODO: This is to enable the use of the code lens. It really should be provided either on the command line or as an environment variable.
+    //val experimentPath = "testconf/"
     val durationConfigKey = "duration"
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
 
-    val experimentPath = System.getProperties().asScala.getOrElse("experimentPath", defaultExperimentPath)
-    if (!(experimentPath.endsWith("/"))) then {
-        throw new IllegalArgumentException(s"experimentPath must end with '/', but got '$experimentPath'")
+    if (experimentPath.isEmpty()) then {
+        throw new IllegalArgumentException(s"experimentPath must be provided, but got empty string. Use \"experiment/\" or specify a different path.")
     }
+    val cleanedExperimentPath = if (experimentPath.endsWith("/")) experimentPath else experimentPath + "/"
 
-    val configFile = new File(s"${experimentPath}config/")
+    val configFile = new File(s"${cleanedExperimentPath}$experimentConfigPath")
     val folderUrl: URL = configFile.toURI.toURL
     val currentLoader = Thread.currentThread().getContextClassLoader
     val arr: Array[URL] = Array(folderUrl)
     val configLoader = new URLClassLoader(arr, currentLoader)
+    
+    given config: Config = ConfigFactory.load(configLoader, experimentConfigurationFileName).getConfig(this.getClass().getPackage().getName())
 
-    given config: Config = ConfigFactory.load(configLoader, "experiment.conf").getConfig("eusocialcooperation.scheduler")
-
-    val logger = LoggerFactory.getLogger("eusocialcooperation.scheduler.Demo")
+    // TODO: I wonder if I could move the logger file output to the experiment directory
+    MDC.put("experiment", cleanedExperimentPath) // This will be used in the logback configuration to determine where to write logs for this experiment.
+    val logger = LoggerFactory.getLogger(s"${this.getClass.getPackage.getName}.Demo")
 
     val durationMs = {
         config.getDuration(durationConfigKey) match {
@@ -62,7 +65,7 @@ import com.typesafe.config.Config
     val points = AtomicReference(Set.empty[DataPoint[Sample]])
     val prospects = AtomicReference(Set.empty[DataPoint[Point]])
     val dispatcher = ActorSystem(Dispatcher(points, prospects), "DispatcherSystem")
-    val future = dispatcher.scheduler.scheduleOnce(durationMs, () => {
+    val scheduledTask = dispatcher.scheduler.scheduleOnce(durationMs, () => {
         // Send a stop message so it can stop things better.
         given Timeout = 5.seconds
         given Scheduler = dispatcher.scheduler
@@ -88,8 +91,8 @@ import com.typesafe.config.Config
     // TODO: I don't know what this is.
     val skin1 = EmulGLSkin.on(mainChart)
     val skin2 = EmulGLSkin.on(clusterChart)
-    mainChart.screenshot(new File(experimentPath + "main_chart.png"))
-    clusterChart.screenshot(new File(experimentPath + "cluster_chart.png"))
+    mainChart.screenshot(new File(cleanedExperimentPath + "main_chart.png"))
+    clusterChart.screenshot(new File(cleanedExperimentPath + "cluster_chart.png"))
     mainChart.addMouseCameraController()
     clusterChart.addMouseCameraController()
 }

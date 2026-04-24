@@ -8,6 +8,7 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
 import org.apache.pekko.actor.typed.Scheduler
 import org.checkerframework.checker.units.qual.s
+import scala.concurrent.duration.Duration
 
 object DataPoint {
     enum Phase:
@@ -19,7 +20,8 @@ object DataPoint {
         val worker: String = Thread.currentThread().getName
 
         //println(s"Creating DataPoint with value: $value, worker: $worker, phase: $phase")
-        Await.result(dpa.ask[DataPoint[A]](replyTo => DataPointActor.Create(value, phase, worker, replyTo, parent)), 3.seconds)
+        // Using Inf because the pekko ask function takes a timeout, and it's specified above.
+        Await.result(dpa.ask[DataPoint[A]](replyTo => DataPointActor.Create(value, phase, worker, replyTo, parent)), Duration.Inf)
     }
 }
 

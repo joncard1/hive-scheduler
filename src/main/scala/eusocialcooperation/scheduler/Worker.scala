@@ -18,6 +18,7 @@ import eusocialcooperation.scheduler.DataPointActor.DataPointActorKey
 import eusocialcooperation.scheduler.worker.states.{ExplorerState, WorkerState}
 import com.typesafe.config.Config
 import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
+import eusocialcooperation.scheduler.distributions.DistributionStrategy
 
 object Worker {
 
@@ -80,7 +81,8 @@ object Worker {
 
           //context.log.info(s"Worker ${context.self.path.name} found DataPointActor and is starting.")
           val running  = new AtomicBoolean(true)
-          val preference = Random.between(0.0, 1.0)
+          val strategy = DistributionStrategy()
+          val preference = strategy()
 
           val thread = new Thread(() => {
             var phase: WorkerState = ExplorerState((BigDecimal(Random.nextDouble()), BigDecimal(Random.nextDouble())), kernelFn, preference, dispatcher)
@@ -132,10 +134,10 @@ object Worker {
   )(implicit context: ActorContext[?], config: Config): Behavior[Command] =
     Behaviors.receiveMessage[Command] {
       case Stop(replyTo) =>
-        println(s"Worker ${context.self.path.name} stopping from message.")
+        context.log.debug(s"Worker ${context.self.path.name} stopping from message.")
         running.set(false)
         thread.join()
-        println(s"Worker ${context.self.path.name} stopped from message.")
+        context.log.debug(s"Worker ${context.self.path.name} stopped from message.")
         replyTo ! Done
         Behaviors.stopped
 
@@ -148,10 +150,8 @@ object Worker {
     }.receiveSignal {
       // TODO: Consider watching fro PreRestart, also. Not sure if that would re-run setup. Probably.
       case (_, PostStop) =>
-        println(s"Worker ${context.self.path.name} stopping from signal.")
         running.set(false)
         thread.join()
-        println(s"Worker ${context.self.path.name} stopped from signal.")
         Behaviors.same
       case event =>
         //println(s"Worker received unexpected signal: $event")

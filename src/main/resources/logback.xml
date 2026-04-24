@@ -9,18 +9,26 @@
         </layout>
     </appender>
 
-    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>logs/scheduler.log</file>
-        <append>false</append>
-        <immediateFlush>false</immediateFlush>
-        <encoder>
-            <pattern>%-4relative [%thread] %-5level %logger{35} -%kvp- %msg%n</pattern>
-        </encoder>
+    <appender name="SIFT" class="ch.qos.logback.classic.sift.SiftingAppender">
+        <discriminator>
+            <key>experiment</key>
+            <defaultValue>experiments/simple/</defaultValue>
+        </discriminator>
+
+        <sift>
+            <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+                <file>${experiment}logs/scheduler.log</file>
+                <append>false</append>
+                <immediateFlush>true</immediateFlush>
+                <encoder>
+                    <pattern>%-4relative [%thread] %-5level %logger{35} -%kvp- %msg%n</pattern>
+                </encoder>
+            </appender>
+        </sift>
     </appender>
 
-
     <logger name="eusocialcooperation" level="debug">
-        <appender-ref ref="FILE"/>
+        <appender-ref ref="SIFT"/>
     </logger>
 
     <root level="warn">

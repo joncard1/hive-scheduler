@@ -28,10 +28,15 @@ object DataPointActor {
       //context.log.info(s"Creating point ${msg.name} with value ${msg.value}, phase ${msg.phase} and sequence number $nextSequenceNumber")
       msg match {
         case Create(value: A, phase, name, replyTo : ActorRef[DataPoint[A]], parent) =>
+          context.log.debug(s"Creating point ${name} with value ${value}, phase ${phase} and sequence number $nextSequenceNumber")
           val newPoint = new DataPoint(nextSequenceNumber, System.currentTimeMillis(), name, phase, value, parent)
           replyTo ! newPoint
+          context.log.debug(s"Created point ${name} with value ${value}, phase ${phase} and sequence number $nextSequenceNumber")
           memory.updateAndGet(current => current + newPoint)
           nextState(nextSequenceNumber + 1, memory)
-        }
+        case _ =>
+          context.log.warn(s"Received unexpected message: $msg")
+          Behaviors.same
+      }
   }
 }
