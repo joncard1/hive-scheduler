@@ -88,9 +88,7 @@ class MainLayoutController extends Initializable with LoggingComponent{
         experimentPathLabel.text <== Bindings.createStringBinding(() => s"Experiment Path: ${experimentPathProperty()}", experimentPathProperty)
 
         pointsChartProperty.onChange { (_, _, newValue) =>
-            logger.info(s"Points updated: ${newValue.size} points")
-            newValue.map(chart => {
-                Platform.runLater(() => {
+                newValue.map(chart => {
                     val pointsViewer = new Chart3DViewer(chart)
                     pointsViewer.setPrefSize(800, 600)
 
@@ -98,42 +96,35 @@ class MainLayoutController extends Initializable with LoggingComponent{
                     this.pointsVBox.children.add(pointsViewer)
                     this.pointsVBox.children.add(pointsLabel)
                 })
-            })
         }
         points2DChartProperty.onChange { (_, _, newValue) =>
             newValue.map(chart => {
-                Platform.runLater(() => {
                     val points2DViewer = new ChartViewer(chart)
                     points2DViewer.setPrefSize(800, 600)
 
                     this.points2DVBox.children.clear()
                     this.points2DVBox.children.add(points2DViewer)
                     this.points2DVBox.children.add(points2DLabel)
-                })
             })
         }
         clusterAnalysisChartProperty.onChange { (_, _, newValue) =>
             newValue.map(chart => {
-                Platform.runLater(() => {
                     val clusterChartViewer = new ChartViewer(chart)
                     clusterChartViewer.setPrefSize(800, 600)
 
                     this.clusterAnalysisVBox.children.clear()
                     this.clusterAnalysisVBox.children.add(clusterChartViewer)
                     this.clusterAnalysisVBox.children.add(clusterAnalysisLabel)
-                })
             })
         }
         lengthSamplesChartProperty.onChange { (_, _, newValue) =>
             newValue.map(chart => {
-                Platform.runLater(() => {
                     val lengthSamplesChartViewer = new ChartViewer(chart)
                     lengthSamplesChartViewer.setPrefSize(800, 600)
     
                     this.lengthSamplesVBox.children.clear()
                     this.lengthSamplesVBox.children.add(lengthSamplesChartViewer)
                     this.lengthSamplesVBox.children.add(lengthSamplesLabel)
-                })
             })
         }
     }

@@ -44,6 +44,8 @@ import eusocialcooperation.scheduler.charter.JFreeCharter
 import org.jfree.chart3d.`export`.ExportUtils
 import org.jfree.chart.ChartUtils
 import scalafx.application.Platform
+import org.jfree.chart.JFreeChart
+import org.jfree.chart3d.Chart3D
 
 object Demo extends JFXApp3 {
 
@@ -97,6 +99,8 @@ object Demo extends JFXApp3 {
         }
 
         // Start the processing thread. Can't be launched in the thread running "start" or it will block the launching of the window.
+        // TODO: Somehow this is a load-bearing log call? Why does this thread not start unless this logging statement is here?
+        logger.trace("Is this starting or what? {}", mdc)
         Future {
             MDC.setContextMap(mdc.asJava)
             logger.trace("Starting processing thread.")
@@ -137,28 +141,36 @@ object Demo extends JFXApp3 {
             } catch {
                 case e: Exception => logger.error("Error while waiting for system termination: {}", e.getMessage)
             }
-            val charter = new JFreeCharter()
-            val pointsChart = charter.getMainChart(points.get(), prospects.get())
-            val points2DChart = charter.getPoints2DChart(points.get(), prospects.get())
-            val clusterAnalysisChart = charter.getClusterChart(points.get())
-            val lengthSamplesChart = charter.getLengthSamplesChart(queueLengths.get().reverse)
-            logger.info("Creating charts")
-            ExportUtils.writeAsPNG(pointsChart, 800, 600, new java.io.File(s"${experimentPath}main-chart.png"))
-            ChartUtils.saveChartAsPNG(new java.io.File(s"${experimentPath}points2D.png"), points2DChart, 800, 600)
-            ChartUtils.saveChartAsPNG(new java.io.File(s"${experimentPath}cluster_chart.png"), clusterAnalysisChart, 800, 600)
-            ChartUtils.saveChartAsPNG(new java.io.File(s"${experimentPath}length_samples_chart.png"), lengthSamplesChart, 800, 600)
-            logger.info("Charts created and saved to disk.")
 
             logger.trace("Processing thread finished.")
+
+            def createAndSaveCharts(): (Chart3D, JFreeChart, JFreeChart, JFreeChart) = {
+                val charter = new JFreeCharter()
+                val pointsChart = charter.getMainChart(points.get(), prospects.get())
+                val points2DChart = charter.getPoints2DChart(points.get(), prospects.get())
+                val clusterAnalysisChart = charter.getClusterChart(points.get())
+                val lengthSamplesChart = charter.getLengthSamplesChart(queueLengths.get().reverse)
+                logger.info("Creating charts")
+                ExportUtils.writeAsPNG(pointsChart, 800, 600, new java.io.File(s"${experimentPath}main-chart.png"))
+                ChartUtils.saveChartAsPNG(new java.io.File(s"${experimentPath}points2D.png"), points2DChart, 800, 600)
+                ChartUtils.saveChartAsPNG(new java.io.File(s"${experimentPath}cluster_chart.png"), clusterAnalysisChart, 800, 600)
+                ChartUtils.saveChartAsPNG(new java.io.File(s"${experimentPath}length_samples_chart.png"), lengthSamplesChart, 800, 600)
+                logger.info("Charts created and saved to disk.")
+                (pointsChart, points2DChart, clusterAnalysisChart, lengthSamplesChart)
+
+            }
+            // Not sure why, but the chart creation works fine outside the Platform thread, but if then try to add those charts to the UI, it doesn't work.
             if (!headless) {
-                controller.pointsChartProperty() = Option(pointsChart)
-                controller.points2DChartProperty() = Option(points2DChart)
-                controller.clusterAnalysisChartProperty() = Option(clusterAnalysisChart)
-                controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
+                Platform.runLater(() => {
+                    val (pointsChart, points2DChart, clusterAnalysisChart, lengthSamplesChart) = createAndSaveCharts()
+                    controller.pointsChartProperty() = Option(pointsChart)
+                    controller.points2DChartProperty() = Option(points2DChart)
+                    controller.clusterAnalysisChartProperty() = Option(clusterAnalysisChart)
+                    controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
+                })
             } else {
-                Platform.runLater {
-                    this.stopApp()
-                }
+                createAndSaveCharts()
+                Platform.exit()
             }
         }
     }
