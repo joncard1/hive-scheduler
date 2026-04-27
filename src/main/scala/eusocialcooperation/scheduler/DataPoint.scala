@@ -7,7 +7,6 @@ import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
 import org.apache.pekko.actor.typed.Scheduler
-import org.checkerframework.checker.units.qual.s
 import scala.concurrent.duration.Duration
 
 object DataPoint {

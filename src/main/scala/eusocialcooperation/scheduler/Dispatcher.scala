@@ -30,24 +30,28 @@ object Dispatcher {
   final case class RequestedPoints(points: Set[DataPoint[Point]]) extends Response
   final case class Stopped() extends Response
 
-  def apply(pointsMemory: AtomicReference[Set[DataPoint[Sample]]], prospectsMemory: AtomicReference[Set[DataPoint[Point]]])(implicit appConfig: Config): Behavior[Command] = Behaviors.setup { ctx =>
-    val localConfig = appConfig.getConfig("dispatcher")
-    val numWorkers = {
-      val num = localConfig.getInt("numWorkers")
-      if (num < 1) {
-        throw new IllegalArgumentException(s"numWorkers must be at least 1, but got $num")
-      }
-      num
-    }
-    val sampleActor = ctx.spawn(DataPointActor[Sample](pointsMemory), "sampleActor")
-    val pointActor = ctx.spawn(DataPointActor[Point](new AtomicReference(Set.empty)), "pointActor")
+  def apply(pointsMemory: AtomicReference[Set[DataPoint[Sample]]], prospectsMemory: AtomicReference[Set[DataPoint[Point]]])(implicit appConfig: Config, mdc: Map[String, String]): Behavior[Command] =
+    Behaviors.withMdc(mdc)(
+      Behaviors.setup { ctx =>
+        val localConfig = appConfig.getConfig("dispatcher")
+        val numWorkers = {
+          val num = localConfig.getInt("numWorkers")
+          if (num < 1) {
+            throw new IllegalArgumentException(s"numWorkers must be at least 1, but got $num")
+          }
+          num
+        }
+        val sampleActor = ctx.spawn(DataPointActor[Sample](pointsMemory), "sampleActor")
+        val pointActor = ctx.spawn(DataPointActor[Point](new AtomicReference(Set.empty)), "pointActor")
 
-    var workers = Set.empty[ActorRef[Worker.Command]]
-    (1 to numWorkers).foreach { i =>
-      workers += ctx.spawn(Worker(kernel, ctx.self), s"worker-$i")
-    }
-    active(Set.empty, Set.empty, prospectsMemory, sampleActor, pointActor, workers, ctx)
-  }
+        var workers = Set.empty[ActorRef[Worker.Command]]
+        ctx.log.trace("Spawning {} workers.", numWorkers)
+        (1 to numWorkers).foreach { i =>
+          workers += ctx.spawn(Worker(kernel, ctx.self), s"worker-$i")
+        }
+        active(Set.empty, Set.empty, prospectsMemory, sampleActor, pointActor, workers, ctx)
+      }
+  )
 
   private def active(points: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]], prospectsMemory: AtomicReference[Set[DataPoint[Point]]], sampleActor: ActorRef[DataPointActor.Command], pointActor: ActorRef[DataPointActor.Command], workers: Set[ActorRef[Worker.Command]], ctx: ActorContext[Command]): Behavior[Command] =
     Behaviors.receiveMessage[Command] {
@@ -85,10 +89,5 @@ object Dispatcher {
         ctx.stop(pointActor)
         replyTo ! Stopped()
         Behaviors.stopped
-    }.receiveSignal({
-      case (ctx, PostStop) =>
-        ctx.log.info(s"Received stop signal in Dispatcher, shutting down.")
-        prospectsMemory.updateAndGet(_ ++ prospects)
-        Behaviors.same
-    })
+    }
 }

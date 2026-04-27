@@ -32,6 +32,7 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
     val delayPerProspect = 50L
     val explorationRadius = 0.01
     val threshold = 0.05   
+    val weightPerProspect = 0.2
 
     def getConfig() = {
         val config: Config = mock[Config]
@@ -40,6 +41,8 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         (config.getMilliseconds).expects(ExplorerState.delayPerProspectConfigKey).returning(delayPerProspect).atLeastOnce()
         (config.getDouble).expects(ExplorerState.explorationRadiusConfigKey).returning(explorationRadius).atLeastOnce()
         (config.getDouble).expects(ExplorerState.thresholdConfigKey).returning(threshold).atLeastOnce()
+        (config.getMilliseconds).expects(Worker.loopDelayConfigKey).returning(10L).anyNumberOfTimes()
+        (config.getDouble).expects(Worker.weightPerProspectConfigKey).returning(weightPerProspect).anyNumberOfTimes()
         config
     }
     
@@ -84,7 +87,7 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }
     }
 
-    test("ExplorerState should explore the last point and change to an ExplorerState") {
+    test("ExplorerState should explore the last point and change to a choose state") {
         given Config = getConfig()
 
         val numPoints = 10
@@ -98,15 +101,17 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         )
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
+        /*
         val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {
             case Dispatcher.RequestPoints(replyTo) =>
                 replyTo ! Dispatcher.RequestedPoints(newProspects)
                 Behaviors.same
             case _ => Behaviors.same
         }), "dispatcher")
+        */
 
         val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
-        given sampleActor: ActorRef[DataPointActor.Create[Worker.Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Worker.Sample]] {
+        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Worker.Sample]] {
             case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
                 replyTo ! new DataPoint(0, 0, name, phase, sample, parent)
                 Behaviors.same
@@ -121,15 +126,14 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         try {
             // Given the preference and the expected number of prospects delivered above, the worker should choose to be an exploiter, but if the preference is higher it should choose to be an explorer, so we can test both branches by adjusting the preference.
-            val preference = BigDecimal((WorkerState.weightPerProspect * newProspects.size) + 0.001)
-            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcher, Some(0))
-            val newState = state().asInstanceOf[ExplorerState]
+            val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)
+            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcherProbe.ref, Some(0))
+            val newState = state().asInstanceOf[ChooseState]
 
             sampleProbe.expectMessageType[DataPointActor.Create[Worker.Sample]]
-            dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
-            println(s"New state is ${newState}")
+            //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
         } finally {
-            testKit.stop(dispatcher)
+            //testKit.stop(dispatcher)
             testKit.stop(sampleActor)
             testKit.stop(pointActor)
         }
@@ -172,10 +176,8 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }
     }
 
-    test("ExplorerState should submit a prospect after finding a high value after a low value and transition to an exploiter state") {
+    test("ExplorerState should submit a prospect after finding a high value after a low value and transition to a choose state") {
         given config: Config = getConfig()
-        (config.getDouble).expects(ExploiterState.fuzzinessConfigKey).returning(0.01)
-        (config.getDouble).expects(ExploiterState.incrementConfigKey).returning(0.001).atLeastOnce()
 
         val point1 = (BigDecimal(0.1), BigDecimal(0.1))
         val point2 = (BigDecimal(0.2), BigDecimal(0.2))
@@ -199,9 +201,11 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
                 actualDelay.set(delayMs)
                 setterPromise.success(())
                 Behaviors.same
+                /*
             case Dispatcher.RequestPoints(replyTo) =>
                 replyTo ! Dispatcher.RequestedPoints(newProspects)
                 Behaviors.same
+                */
             case _ => Behaviors.same
         }), "dispatcher")
 
@@ -220,9 +224,9 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }), "pointActor")
 
         try {
-            val preference = BigDecimal(WorkerState.weightPerProspect * newProspects.size) - BigDecimal(0.001)
+            val preference = BigDecimal(weightPerProspect * newProspects.size) - BigDecimal(0.001)
             val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcher, None, ExplorerState.State.LookingForHighValueAfterLow, memory)
-            val newState = state().asInstanceOf[ExploiterState]
+            val newState = state().asInstanceOf[ChooseState]
 
             sampleProbe.expectMessageType[DataPointActor.Create[Worker.Sample]]
             dispatcherProbe.expectMessageType[Dispatcher.AddProspect]
@@ -231,7 +235,7 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
             actualDelay.get() `shouldBe` (delayPerProspect * 2)
             actualProspect.get() shouldBe defined
             // I think it needs to query for the next state
-            dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
+            //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
         } finally {
             testKit.stop(dispatcher)
             testKit.stop(sampleActor)

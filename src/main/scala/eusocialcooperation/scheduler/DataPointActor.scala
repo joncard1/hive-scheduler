@@ -15,13 +15,16 @@ object DataPointActor {
   sealed trait Command
   final case class Create[A](value: A, phase:DataPoint.Phase, name: String, replyTo: ActorRef[DataPoint[A]], parent: Option[DataPoint[?]] = None) extends Command
 
-  def apply[A : ClassTag](memory: java.util.concurrent.atomic.AtomicReference[Set[DataPoint[A]]]): Behavior[Command] = Behaviors.setup(implicit context => {
-    val key = DataPointActorKey[A]
-    context.log.info(s"DataPointActor ${context.self.path.name} ${key}")
-    context.system.receptionist ! Receptionist.Register(key, context.self)
-    
-    nextState(0L, memory)
-  })
+  def apply[A : ClassTag](memory: java.util.concurrent.atomic.AtomicReference[Set[DataPoint[A]]])(implicit mdc: Map[String, String]): Behavior[Command] =
+    Behaviors.withMdc(mdc)(
+      Behaviors.setup(implicit context => {
+        val key = DataPointActorKey[A]
+        context.log.info(s"DataPointActor ${context.self.path.name} ${key}")
+        context.system.receptionist ! Receptionist.Register(key, context.self)
+        
+        nextState(0L, memory)
+      })
+    )
 
   // TODO: Maybe add storage to this?
   def nextState[A : ClassTag](nextSequenceNumber: Long, memory: java.util.concurrent.atomic.AtomicReference[Set[DataPoint[A]]])(implicit context: ActorContext[?]): Behavior[Command] = Behaviors.receiveMessage { msg =>

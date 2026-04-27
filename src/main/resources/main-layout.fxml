@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.net.*?>
+<?import javafx.geometry.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+
+<GridPane xmlns:fx="http://javafx.com/fxml" fx:controller="eusocialcooperation.scheduler.MainLayoutController" prefWidth="800" prefHeight="600">
+    <VBox>
+        <Label fx:id="jfxExperimentPathLabel" text="Experiment Path: ${controller.jfxExperimentPath}" GridPane.rowIndex="0"/>
+        <TabPane GridPane.rowIndex="1">
+            <tabs>
+                <Tab text="Points">
+                    <VBox fx:id="jfxPointsVBox" spacing="5" HBox.hgrow="ALWAYS">
+                        <Label text="Loading..."/>
+                        <Label fx:id="jfxPointsLabel" text="Points"/>
+                    </VBox>
+                </Tab>
+                <Tab text="Points 2D">
+                    <VBox fx:id="jfxPoints2DVBox" spacing="5" HBox.hgrow="ALWAYS">
+                        <Label text="Loading..."/>
+                        <Label fx:id="jfxPoints2DLabel" text="Points 2D"/>
+                    </VBox>
+                </Tab>
+                <Tab text="Cluster">
+                    <VBox fx:id="jfxClusterAnalysisVBox" spacing="5" HBox.hgrow="ALWAYS">
+                        <Label text="Loading..."/>
+                        <Label fx:id="jfxClusterAnalysisLabel" text="Cluster Analysis"/>
+                    </VBox>
+                </Tab>
+                <Tab text="Queue Length">
+                    <VBox fx:id="jfxLengthSamplesVBox" spacing="5" HBox.hgrow="ALWAYS">
+                        <Label text="Loading..."/>
+                        <Label fx:id="jfxLengthSamplesLabel" text="Length Samples"/>
+                    </VBox>
+                </Tab>
+            </tabs>
+        </TabPane>
+    </VBox>
+</GridPane>

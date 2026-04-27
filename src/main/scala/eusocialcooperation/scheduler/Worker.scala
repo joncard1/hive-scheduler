@@ -19,11 +19,16 @@ import eusocialcooperation.scheduler.worker.states.{ExplorerState, WorkerState}
 import com.typesafe.config.Config
 import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
 import eusocialcooperation.scheduler.distributions.DistributionStrategy
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext
+import scala.util.Success
+import scala.util.Failure
 
 object Worker {
 
   val workersConfigKey = "workers"
   val loopDelayConfigKey = "loopDelay"
+  val weightPerProspectConfigKey = "weightPerProspect"
 
   type KernelFn = (BigDecimal, BigDecimal) => BigDecimal
 
@@ -36,38 +41,41 @@ object Worker {
 
   sealed trait Command
   case class Stop(replyTo: ActorRef[Done]) extends Command
+  case class WorkerThreadStopped(replyTo: ActorRef[Done]) extends Command
   private final case class DPActorListing(
     actors: Listing
   ) extends Command
 
-  def apply(kernelFn: KernelFn, dispatcher: ActorRef[Dispatcher.Command])(implicit config: Config): Behavior[Command] =
-    Behaviors.setup { implicit ctx =>
-      implicit val scheduler: Scheduler = ctx.system.scheduler
+  def apply(kernelFn: KernelFn, dispatcher: ActorRef[Dispatcher.Command])(implicit config: Config, mdc: Map[String, String]): Behavior[Command] =
+    Behaviors.withMdc(mdc)(
+      Behaviors.setup { implicit ctx =>
+        implicit val scheduler: Scheduler = ctx.system.scheduler
 
-      val sampleKey = DataPointActorKey[Sample]
-      val pointKey = DataPointActorKey[Point]
-      ctx.log.info(s"Worker keys {} and {}", sampleKey, pointKey)
+        val sampleKey = DataPointActorKey[Sample]
+        val pointKey = DataPointActorKey[Point]
+        ctx.log.debug(s"Worker keys {} and {}", sampleKey, pointKey)
 
-      // There can only be one adapter from Receptionist.Listing to ActorRef[DataPointActor.Command] (and DataPointActor.Create[A]] has A erased, so it's the same thing), so the listing messages must be differentiated in the receiver.
-      val adapter = ctx.messageAdapter[Receptionist.Listing](listing => DPActorListing(listing))
+        // There can only be one adapter from Receptionist.Listing to ActorRef[DataPointActor.Command] (and DataPointActor.Create[A]] has A erased, so it's the same thing), so the listing messages must be differentiated in the receiver.
+        val adapter = ctx.messageAdapter[Receptionist.Listing](listing => DPActorListing(listing))
 
-      ctx.system.receptionist ! Receptionist.Subscribe(
-        sampleKey,
-        adapter
-      )
-      ctx.system.receptionist ! Receptionist.Subscribe(
-        pointKey,
-        adapter
-      )
-      waitingForDpActors(kernelFn, dispatcher)(using ctx, config.getConfig(Worker.workersConfigKey))
-    }
+        ctx.system.receptionist ! Receptionist.Subscribe(
+          sampleKey,
+          adapter
+        )
+        ctx.system.receptionist ! Receptionist.Subscribe(
+          pointKey,
+          adapter
+        )
+        waitingForDpActors(kernelFn, dispatcher)(using ctx, config.getConfig(Worker.workersConfigKey))
+      }
+    )
 
   private def waitingForDpActors(
     kernelFn: KernelFn,
     dispatcher: ActorRef[Dispatcher.Command]
     , sampleActor: Option[ActorRef[DataPointActor.Create[Sample]]] = None
     , pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
-  )(implicit context: ActorContext[?], config: Config): Behavior[Command] =
+  )(implicit context: ActorContext[Command], config: Config): Behavior[Command] =
     Behaviors.receiveMessage[Command] { msg =>
       val loopDelayMs = config.getMilliseconds(Worker.loopDelayConfigKey)
       def createNextState(
@@ -84,14 +92,13 @@ object Worker {
           val strategy = DistributionStrategy()
           val preference = strategy()
 
+          context.log.trace("Worker starting thread with preference: {}", preference)
           val thread = new Thread(() => {
             var phase: WorkerState = ExplorerState((BigDecimal(Random.nextDouble()), BigDecimal(Random.nextDouble())), kernelFn, preference, dispatcher)
             while (running.get()) {
               implicit val dpSampleActor: ActorRef[DataPointActor.Create[Sample]] = sampleActor.get
               implicit val dpPointActor: ActorRef[DataPointActor.Create[Point]] = pointActor.get
               phase = phase()
-              try Thread.sleep(loopDelayMs)
-              catch { case _: InterruptedException => Thread.currentThread().interrupt() }
             }
           }, s"Worker Thread ${context.self.path.name}")
           thread.setDaemon(true)
@@ -131,30 +138,29 @@ object Worker {
     thread: Thread,
     sampleActorRef: ActorRef[DataPointActor.Create[Sample]],
     pointActorRef: ActorRef[DataPointActor.Create[Point]]
-  )(implicit context: ActorContext[?], config: Config): Behavior[Command] =
+  )(implicit context: ActorContext[Command], config: Config): Behavior[Command] =
     Behaviors.receiveMessage[Command] {
       case Stop(replyTo) =>
+        given ExecutionContext = context.system.executionContext
         context.log.debug(s"Worker ${context.self.path.name} stopping from message.")
         running.set(false)
-        thread.join()
+        context.pipeToSelf(Future { thread.join() }) {
+          case Success(_) => WorkerThreadStopped(replyTo)
+          case Failure(e) =>
+            context.log.error(s"Worker ${context.self.path.name} encountered error while stopping: ${e.getMessage}")
+            WorkerThreadStopped(replyTo) // Still reply to the sender to avoid hanging, even if there was an error.
+        }
         context.log.debug(s"Worker ${context.self.path.name} stopped from message.")
+        Behaviors.same
+      case WorkerThreadStopped(replyTo) =>
+        context.log.info(s"Worker ${context.self.path.name} stopped successfully.")
         replyTo ! Done
         Behaviors.stopped
-
       case DPActorListing(actors) if actors.isForKey(DataPointActor.DataPointActorKey[Sample]) && actors.serviceInstances(DataPointActor.DataPointActorKey[Sample]).nonEmpty =>
         active(running, thread, actors.serviceInstances(DataPointActor.DataPointActorKey[Sample]).head, pointActorRef)
       case DPActorListing(actors) if actors.isForKey(DataPointActor.DataPointActorKey[Point]) && actors.serviceInstances(DataPointActor.DataPointActorKey[Point]).nonEmpty =>
         active(running, thread, sampleActorRef, actors.serviceInstances(DataPointActor.DataPointActorKey[Point]).head)
       case _ =>
-        Behaviors.same
-    }.receiveSignal {
-      // TODO: Consider watching fro PreRestart, also. Not sure if that would re-run setup. Probably.
-      case (_, PostStop) =>
-        running.set(false)
-        thread.join()
-        Behaviors.same
-      case event =>
-        //println(s"Worker received unexpected signal: $event")
         Behaviors.same
     }
 }

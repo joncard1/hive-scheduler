@@ -16,7 +16,7 @@
         </discriminator>
 
         <sift>
-            <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+            <appender name="FILE-${experiment}" class="ch.qos.logback.core.FileAppender">
                 <file>${experiment}logs/scheduler.log</file>
                 <append>false</append>
                 <immediateFlush>true</immediateFlush>
@@ -27,7 +27,7 @@
         </sift>
     </appender>
 
-    <logger name="eusocialcooperation" level="debug">
+    <logger name="eusocialcooperation" level="trace">
         <appender-ref ref="SIFT"/>
     </logger>
 

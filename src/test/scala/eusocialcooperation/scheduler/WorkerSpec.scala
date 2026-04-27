@@ -20,6 +20,9 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
   val testKit: ActorTestKit = ActorTestKit()
   implicit val scheduler: Scheduler = testKit.system.scheduler
 
+  // The MDC configuration specifying where to store the logging output.
+  given Map[String, String] = Map.empty
+
   override def afterAll(): Unit = {
     println("Shutting down test kit in afterAll.")
     testKit.shutdownTestKit()

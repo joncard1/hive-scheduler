@@ -19,6 +19,9 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
   implicit val timeout: Timeout = Timeout(3.seconds)
   implicit lazy val scheduler: org.apache.pekko.actor.typed.Scheduler = testKit.system.scheduler
 
+  // The MDC configuration specifying where to store the logging output.
+  given Map[String, String] = Map.empty
+
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
   test("DataPointActor replies with a DataPoint wrapping the given value") {

@@ -135,16 +135,10 @@ case class ExplorerState(
                 this.copy(startLocation = newPoint, remainingSteps = Option(Math.max(0, remainingSteps.get - 1)), state = newState, memory = newMemory)
             case State.NextState => // These two states should be the same, but "|" doesn't work with an "if" clause
                 logger.info("Found a high, moving to another state.")
-                chooseState(
-                    () => ExplorerState(newPoint, kernelFn, this.preference, dispatcher),
-                    (prospect) => ExploiterState(prospect, preference, kernelFn, dispatcher)
-                )
+                ChooseState(kernelFn, preference, dispatcher)
             case _ if remainingSteps.get <= 0 =>
                 logger.info("Ran out of steps, moving to another state")
-                chooseState(
-                    () => ExplorerState(newPoint, kernelFn, this.preference, dispatcher),
-                    (prospect) => ExploiterState(prospect, preference, kernelFn, dispatcher)
-                )
+                ChooseState(kernelFn, preference, dispatcher)
             case _ =>
                 logger.info("Continuing exploration, decrementing remaining steps")
                 this.copy(startLocation = newPoint, remainingSteps = Option(remainingSteps.get - 1), state = newState, memory = newMemory)

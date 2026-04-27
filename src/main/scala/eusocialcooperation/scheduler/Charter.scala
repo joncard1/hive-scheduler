@@ -1,18 +1,28 @@
 package eusocialcooperation.scheduler
 
-import org.jzy3d.chart.Chart
-import org.jzy3d.chart.factories.IChartFactory
-import org.jzy3d.plot3d.primitives.Scatter
-import org.jzy3d.maths.Coord3d
-import org.jzy3d.maths.Coord2d
-import org.jzy3d.plot2d.primitives.ScatterSerie2d
-import org.jzy3d.maths.Coord2d
-import org.jzy3d.plot2d.primitives.ScatterPointSerie2d
+//import org.jzy3d.chart.Chart
+//import org.jzy3d.chart.factories.IChartFactory
+//import org.jzy3d.plot3d.primitives.Scatter
+//import org.jzy3d.maths.Coord3d
+//import org.jzy3d.maths.Coord2d
+//import org.jzy3d.plot2d.primitives.ScatterSerie2d
+//import org.jzy3d.maths.Coord2d
+//import org.jzy3d.plot2d.primitives.ScatterPointSerie2d
 import scala.collection.JavaConverters._
-import org.jzy3d.colors.colormaps.ColorMapGrayscale
-import org.jzy3d.colors.Color
+//import org.jzy3d.colors.colormaps.ColorMapGrayscale
+//import org.jzy3d.colors.Color
+import scalafx.scene.Node
+import org.jfree.chart3d.Chart3D
+import org.jfree.chart.JFreeChart
 
-class Charter extends LoggingComponent {
+trait Charter {
+    def getMainChart(pointsData: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]]): Chart3D
+    def getPoints2DChart(pointsData: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]]): JFreeChart
+    def getClusterChart(pointsData: Set[DataPoint[Sample]]): JFreeChart
+    def getLengthSamplesChart(lengthSamples: List[(Long, Int)]): JFreeChart
+}
+/*
+class Jzy3dCharter extends LoggingComponent with Charter {
   def getMainChart(pointsData: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]], factory: IChartFactory): Chart = {
     val exploiterPoints = pointsData.filter(_.phase == DataPoint.Phase.Exploiter)
     logger.info("Exploiter points count: {}", exploiterPoints.size)
@@ -84,3 +94,4 @@ class Charter extends LoggingComponent {
     clusterChart
   }
 }
+*/
