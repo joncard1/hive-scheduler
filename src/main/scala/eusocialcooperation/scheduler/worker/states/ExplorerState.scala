@@ -17,22 +17,6 @@ object ExplorerState {
     enum State {
         case LookingForFirstLowValue, LookingForHighValueAfterLow, NextState
     }
-
-    /**
-      * The number of points to explore before choosing whether to transition to the exploiter state or to continue exploring. This is a hyperparameter that may require tuning.
-      */
-    //val numPointsToExplore = 10
-    /**
-     * The threshold below which a point is considered promising enough to be sent to the dispatcher as a prospect. This is a hyperparameter that may require tuning.
-     */
-    // val threshold = BigDecimal(0.05)
-    /**
-      * The radius around the current location the next randomly selected point will be located. This is a hyperparameter that may require tuning.
-      */
-    // val explorationRadius = BigDecimal(0.01)
-
-    /** Number of milliseconds to delay a prospect for each point in the explorer's memory. This is a hyperparameter that may require tuning. */
-    // val delayPerProspect = 10L
 }
 
 case class ExplorerState(

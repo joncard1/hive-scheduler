@@ -17,7 +17,7 @@ import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import eusocialcooperation.scheduler.DataPoint
 import eusocialcooperation.scheduler.Dispatcher.RequestPoints
 import eusocialcooperation.scheduler.DataPointActor
-import eusocialcooperation.scheduler.Worker.Sample
+import eusocialcooperation.scheduler.Sample
 import org.apache.pekko.actor.typed.ActorRef
 import eusocialcooperation.scheduler.Point
 import eusocialcooperation.scheduler.Worker

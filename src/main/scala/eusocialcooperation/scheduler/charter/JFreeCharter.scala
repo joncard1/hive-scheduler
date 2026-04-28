@@ -31,6 +31,9 @@ import org.jfree.data.category.DefaultCategoryDataset
 import org.jfree.data.statistics.DefaultMultiValueCategoryDataset
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer
 
+/**
+  * Implements the {@see eusocialcooperation.scheduler.Charter} trait for the JFree Chart library.
+  */
 class JFreeCharter extends Charter {
     override def getMainChart(pointsData: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]]): Chart3D = {
         val series = new XYZSeries("Point Data")

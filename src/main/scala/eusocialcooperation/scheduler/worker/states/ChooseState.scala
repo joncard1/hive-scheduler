@@ -16,49 +16,105 @@ import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import eusocialcooperation.scheduler.DataPoint
+import scala.concurrent.Future
 
-final case class ChooseState(kernelFn: Worker.KernelFn, preference: BigDecimal, dispatcher: ActorRef[Dispatcher.Command])(implicit config: Config) extends WorkerState with LoggingComponent {
-    val loopDelayMs = config.getMilliseconds(Worker.loopDelayConfigKey)
-    val weightPerProspect = config.getDouble(Worker.weightPerProspectConfigKey)
+/** The state in which the worker chooses its next state and also sleeps for the
+  * time configured in {@Worker.loopDelayConfigKey} before making that choice.
+  * The choice is made by asking the dispatcher for the current prospects and
+  * then using the worker's preference to choose between the explorer state and
+  * the exploiter state. The more prospects there are, the more likely the
+  * exploiter state is to be chosen, but in a non-linear way that still gives
+  * some chance to the explorer state even with many prospects.
+  *
+  * @param kernelFn
+  *   The function that the worker will exploit or explore.
+  * @param preference
+  *   The worker's preference for being in the ExploiterState or the
+  *   ExplorerState.
+  * @param dispatcher
+  *   The dispatcher to which the worker will send the generated data points.
+  * @param config
+  *   The configuration object the worker will use to access global parameters.
+  */
+final case class ChooseState(
+    kernelFn: Worker.KernelFn,
+    preference: BigDecimal,
+    dispatcher: ActorRef[Dispatcher.Command]
+)(implicit config: Config)
+    extends WorkerState
+    with LoggingComponent {
+  val loopDelayMs = config.getMilliseconds(Worker.loopDelayConfigKey)
+  val weightPerProspect = config.getDouble(Worker.weightPerProspectConfigKey)
 
-    override def apply()(using ActorRef[Create[Sample]], ActorRef[Create[Point]], Scheduler): WorkerState = {
-        try Thread.sleep(loopDelayMs)
-        catch { case _: InterruptedException => Thread.currentThread().interrupt() }
-        
-        implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
-        implicit val timeout: Timeout = Timeout(3.seconds)
+  override def apply()(using
+      ActorRef[Create[Sample]],
+      ActorRef[Create[Point]],
+      Scheduler
+  ): WorkerState = {
+    implicit val ec: scala.concurrent.ExecutionContext =
+      scala.concurrent.ExecutionContext.global
+    implicit val timeout: Timeout = Timeout(3.seconds)
 
-        def createExplorer(): WorkerState = ExplorerState((BigDecimal(Random.nextDouble()), BigDecimal(Random.nextDouble())), kernelFn, preference, dispatcher)
-        def createExploiter(prospect: DataPoint[Point]): WorkerState = ExploiterState(prospect, preference, kernelFn, dispatcher)
+    // Sleep to avoid flogging the processor and to simulate performing a difficult task.
+    try Thread.sleep(loopDelayMs)
+    catch { case _: InterruptedException => Thread.currentThread().interrupt() }
 
-        val state = dispatcher.ask[Dispatcher.RequestedPoints](Dispatcher.RequestPoints(_)).map(_.points).map({
-            case s if s.nonEmpty => 
-                // Adjust it so that the more prospects there are, the more likely the exploiter state is to be chosen, but in a non-linear way that still gives some chance to the explorer state even with many prospects.
-                //val adjustedPreference = (1.0 - Math.pow((1.0 - preference).toDouble, s.size))
-                // I'm assuming I got this backwards
-                /*
-                if (Random.nextDouble() < adjustedPreference) createExplorer()
-                else
-                    createExploiter(Random.shuffle(s).head)
-                */
-                val value = s.size * weightPerProspect
-                logger.info(s"Worker has ${s.size} prospects, value is $value, preference is $preference")
-                if (value < preference) {
-                    logger.info(s"Creating Explorer because ${s.size} * ${weightPerProspect} = $value is less than ${preference}.")
-                    createExplorer()
-                } else {
-                    val prospect = Random.shuffle(s).head
-                    logger.info(s"Creating Exploiter because ${s.size} * ${weightPerProspect} = $value is greater than $preference for point $prospect")
-                    createExploiter(prospect)
-                }
+    def createExplorer(): WorkerState = ExplorerState(
+      (BigDecimal(Random.nextDouble()), BigDecimal(Random.nextDouble())),
+      kernelFn,
+      preference,
+      dispatcher
+    )
+    def createExploiter(prospect: DataPoint[Point]): WorkerState =
+      ExploiterState(prospect, preference, kernelFn, dispatcher)
 
-            case _ =>
-                logger.info("Creating Explorer because no prospects are available.")
-                createExplorer()
+    /** Observe the control variable and compare it to the agent's preference.
+      * In this case, the control variable is the queue length of tasks
+      * available to run, weighted by "weightPerProspect".
+      */
+    def observeControlVariable(): Future[WorkerState] =
+      dispatcher
+        .ask[Dispatcher.RequestedPoints](Dispatcher.RequestPoints(_))
+        .map(_.points)
+        .map({
+          case s if s.nonEmpty =>
+            val value = s.size * weightPerProspect
+            logger.trace(
+              "Worker has {} prospects, value is {}, preference is {}",
+              s.size,
+              value,
+              preference
+            )
+            if (value < preference) {
+              logger.trace(
+                "Creating Explorer because {} * {} = {} is less than {}.",
+                s.size,
+                weightPerProspect,
+                value,
+                preference
+              )
+              createExplorer()
+            } else {
+              val prospect = Random.shuffle(s).head
+              logger.trace(
+                "Creating Exploiter because {} * {} = {} is greater than {} for point {}",
+                s.size,
+                weightPerProspect,
+                value,
+                preference,
+                prospect
+              )
+              createExploiter(prospect)
+            }
+
+          case _ =>
+            logger
+              .trace("Creating Explorer because no prospects are available.")
+            createExplorer()
         })
         
-        Await.result(state, 3.seconds)
+    Await.result(observeControlVariable(), 3.seconds)
 
-    }
-  
+  }
+
 }
