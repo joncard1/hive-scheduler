@@ -38,8 +38,6 @@ jobs:
       uses: irongut/CodeCoverageSummary@v1.3.0
       with:
         filename: target/**/coverage-report/cobertura.xml
-        name: Code Coverage Summary Repo
         output: both
         badge: true
-
-
+        format: markdown
