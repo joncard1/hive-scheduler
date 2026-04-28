@@ -30,7 +30,12 @@ jobs:
     - name: Setup sbt launcher
       uses: sbt/setup-sbt@v1
     - name: Build and Test
-      run: sbt +test
+      run: sbt coverage +test coverageReport
     # Optional: This step uploads information to the GitHub dependency graph and unblocking Dependabot alerts for the repository
     # - name: Upload dependency graph
     #   uses: scalacenter/sbt-dependency-submission@ab086b50c947c9774b70f39fc7f6e20ca2706c91
+    - name: Code Coverage Summary Report
+      uses: irongut/CodeCoverageSummary@v1.3.0
+      with:
+        filename: target/**/coverage-report/cobertura.xml
+
