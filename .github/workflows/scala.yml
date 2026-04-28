@@ -37,5 +37,5 @@ jobs:
     - name: Code Coverage Summary Report
       uses: irongut/CodeCoverageSummary@v1.3.0
       with:
-        filename: cobertura.xml
+        filename: target/**/coverage-report/cobertura.xml
 
