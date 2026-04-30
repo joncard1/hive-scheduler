@@ -9,7 +9,6 @@ lazy val root = (project in file("."))
   .settings(
     resolvers += ("jzy3d" at "http://maven.jzy3d.org/releases").withAllowInsecureProtocol(true),
     name := "hive-scheduler",
-    coverageEnabled := true,
     libraryDependencies ++= Seq(
       scalatest % Test
       , pekkoActor
