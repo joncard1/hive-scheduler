@@ -46,6 +46,8 @@ import org.jfree.chart.ChartUtils
 import scalafx.application.Platform
 import org.jfree.chart.JFreeChart
 import org.jfree.chart3d.Chart3D
+import java.io.Closeable
+import scala.util.Using
 
 /** The main entry point of the application. When this is started, the system is
   * constructed in 2 parts: the UI and the processing thread. The UI is
@@ -75,6 +77,38 @@ object Demo extends JFXApp3 {
   val durationConfigKey = "duration"
   val mdcKey = "experiment"
 
+  def parseRunsParam(namedParameters: Map[String, String]): Int = {
+    namedParameters.get("runs") match {
+      case None => 1
+      case Some(rawRuns) =>
+        try {
+          val runs = rawRuns.toInt
+          if (runs < 1) {
+            throw new IllegalArgumentException(
+              s"--runs must be at least 1, but got $runs"
+            )
+          }
+          runs
+        } catch {
+          case _: NumberFormatException =>
+            throw new IllegalArgumentException(
+              s"--runs must be an integer, but got '$rawRuns'"
+            )
+        }
+    }
+  }
+
+  def runOutputPath(experimentPath: String, runNumber: Int, runs: Int): String = {
+    if (runs > 1) {
+      s"${experimentPath}run_${runNumber.formatted("%03d")}/"
+    } else {
+      experimentPath
+    }
+  }
+
+  def effectiveHeadless(requestedHeadless: Boolean, runs: Int): Boolean =
+    requestedHeadless || runs > 1
+
   override def start(): Unit = {
     implicit val ec: scala.concurrent.ExecutionContext =
       scala.concurrent.ExecutionContext.global
@@ -88,18 +122,20 @@ object Demo extends JFXApp3 {
       case Some(path) if !path.endsWith("/") => path + "/"
       case Some(path)                        => path
     }
-    val headless = this.parameters.named.get("headless").exists(_.toBoolean)
+    val namedParameters = this.parameters.named.toMap
+    val runs = parseRunsParam(namedParameters)
+    val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
+    val headless = effectiveHeadless(requestedHeadless, runs)
 
     // Creates a configuration that lets the logging data be output to the folder where the experiment is being conducted, keeping the run data consolidated together.
-    MDC.put(
-      mdcKey,
-      experimentPath
-    ) // This will be used in the logback configuration to determine where to write logs for this experiment.
-    given mdc: Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
+    MDC.put(mdcKey, experimentPath) // This will be used in the logback configuration to determine where to write logs for this experiment.
+    //MDC.put(mdcKey, experimentPath) // This will be used in the logback configuration to determine where to write logs for this experiment.
+    given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
     val logger =
       LoggerFactory.getLogger(s"${this.getClass.getPackage.getName}.Demo")
 
     // Puts the <experimentPath>/config folder into the classpath. Would actually prefer not to put the whole folder into the classpath, but that seems to be how it works. I wonder how serious a vulnerability/feature this is, because it opens up putting logback.xml or similar in the config folder which could surreptitiously change the experiment behavior.
+    // TODO: Probably should verify it exists.
     val configFile = new File(s"${experimentPath}$experimentConfigPath")
     val folderUrl: URL = configFile.toURI.toURL
     val currentLoader = Thread.currentThread().getContextClassLoader
@@ -138,131 +174,167 @@ object Demo extends JFXApp3 {
 
     // Start the processing thread. Can't be launched in the thread running "start" or it will block the launching of the window.
     // TODO: Somehow this is a load-bearing log call? Why does this thread not start unless this logging statement is here? I don't think it's just that the logs aren't writing properly; the data never shows up in UI.
-    logger.trace("Is this starting or what? {}", mdc)
+    //logger.trace("Is this starting or what?")
     Future {
-      MDC.setContextMap(mdc.asJava)
-      logger.trace("Starting processing thread.")
-      val points = AtomicReference(Set.empty[DataPoint[Sample]])
-      val prospects = AtomicReference(Set.empty[DataPoint[Point]])
+      MDC.put(mdcKey, experimentPath)
 
-      logger.trace("Creating dispatcher actor system.")
-
-      val dispatcher = try {
-        ActorSystem(Dispatcher(points, prospects), "DispatcherSystem")
-      } catch {
-        case e: Exception =>
-          logger.error(
-            "Error while creating dispatcher actor system: {}",
-            e.getMessage
-          )
-          throw e
-      }
-      logger.trace("Got dispatcher reference")
-
-      logger.trace("Started queue sampler")
-      val queueLengths = AtomicReference(List[(Long, Int)]())
-      val startTime = System.currentTimeMillis()
-      val queueSampler = dispatcher.scheduler.scheduleAtFixedRate(
-        100.milliseconds,
-        100.milliseconds
-      ) { () =>
-        given Timeout = 1.second
-        given Scheduler = dispatcher.scheduler
-        dispatcher
-          .ask[Dispatcher.RequestedPoints](Dispatcher.RequestPoints(_))
-          .map { points =>
-            queueLengths.updateAndGet(x =>
-              (System.currentTimeMillis() - startTime, points.points.size) :: x
-            )
-          }
-      }
-      logger.trace("Started queue sampler")
-
-      val scheduledTask = dispatcher.scheduler.scheduleOnce(
-        durationMs,
-        () => {
-          // Send a stop message so it can stop things better.
-          given Timeout = 5.seconds
-          given Scheduler = dispatcher.scheduler
-          Await.result(
-            dispatcher
-              .ask(Dispatcher.Stop(_))
-              .map(_ => logger.debug("Dispatcher stopped successfully.")),
-            5.seconds
-          )
-          queueSampler.cancel()
-          dispatcher.terminate()
-        }
-      )
-      try {
-        Await.result(dispatcher.whenTerminated, durationMs.plus(10.seconds))
-      } catch {
-        case e: Exception =>
-          logger.error(
-            "Error while waiting for system termination: {}",
-            e.getMessage
-          )
-      }
-
-      logger.trace("Processing thread finished.")
-
-      def createAndSaveCharts()
-          : (Chart3D, JFreeChart, JFreeChart, JFreeChart) = {
-        val charter = new JFreeCharter()
-        val pointsChart = charter.getMainChart(points.get(), prospects.get())
-        val points2DChart =
-          charter.getPoints2DChart(points.get(), prospects.get())
-        val clusterAnalysisChart = charter.getClusterChart(points.get())
-        val lengthSamplesChart =
-          charter.getLengthSamplesChart(queueLengths.get().reverse)
-        logger.info("Creating charts")
-        ExportUtils.writeAsPNG(
-          pointsChart,
-          800,
-          600,
-          new java.io.File(s"${experimentPath}main-chart.png")
-        )
-        ChartUtils.saveChartAsPNG(
-          new java.io.File(s"${experimentPath}points2D.png"),
-          points2DChart,
-          800,
-          600
-        )
-        ChartUtils.saveChartAsPNG(
-          new java.io.File(s"${experimentPath}cluster_chart.png"),
-          clusterAnalysisChart,
-          800,
-          600
-        )
-        ChartUtils.saveChartAsPNG(
-          new java.io.File(s"${experimentPath}length_samples_chart.png"),
-          lengthSamplesChart,
-          800,
-          600
-        )
-        logger.info("Charts created and saved to disk.")
-        (pointsChart, points2DChart, clusterAnalysisChart, lengthSamplesChart)
-
-      }
-      // Not sure why, but the chart creation works fine outside the Platform thread, but if then try to add those charts to the UI, it doesn't work.
-      if (!headless) {
-        Platform.runLater(() => {
-          val (
+      def createAndSaveCharts(
+          points: AtomicReference[Set[DataPoint[Sample]]],
+          prospects: AtomicReference[Set[DataPoint[Point]]],
+          queueLengths: AtomicReference[List[(Long, Int)]],
+          outputPath: String
+      ): (Chart3D, JFreeChart, JFreeChart, JFreeChart) = {
+        try {
+          logger.info("Creating charts")
+          val charter = new JFreeCharter()
+          val pointsChart = charter.getMainChart(points.get(), prospects.get())
+          val points2DChart =
+            charter.getPoints2DChart(points.get(), prospects.get())
+          val clusterAnalysisChart = charter.getClusterChart(points.get())
+          val lengthSamplesChart =
+            charter.getLengthSamplesChart(queueLengths.get().reverse)
+          logger.info("Saving charts")
+          ExportUtils.writeAsPNG(
             pointsChart,
+            800,
+            600,
+            new java.io.File(s"${outputPath}main-chart.png")
+          )
+          logger.info("Main chart created at {}", s"${outputPath}main-chart.png")
+          ChartUtils.saveChartAsPNG(
+            new java.io.File(s"${outputPath}points2D.png"),
             points2DChart,
+            800,
+            600
+          )
+          ChartUtils.saveChartAsPNG(
+            new java.io.File(s"${outputPath}cluster_chart.png"),
             clusterAnalysisChart,
-            lengthSamplesChart
-          ) = createAndSaveCharts()
-          controller.pointsChartProperty() = Option(pointsChart)
-          controller.points2DChartProperty() = Option(points2DChart)
-          controller.clusterAnalysisChartProperty() =
-            Option(clusterAnalysisChart)
-          controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
-        })
-      } else {
-        createAndSaveCharts()
+            800,
+            600
+          )
+          ChartUtils.saveChartAsPNG(
+            new java.io.File(s"${outputPath}length_samples_chart.png"),
+            lengthSamplesChart,
+            800,
+            600
+          )
+          logger.info("Charts created and saved to disk.")
+          (pointsChart, points2DChart, clusterAnalysisChart, lengthSamplesChart)
+        } catch {
+          case e: Exception =>
+            logger.error(s"Error while creating or saving charts: ${e}")
+            throw e
+        }
+      }
+
+      def runSingleExperiment(runNumber: Int): Unit = {
+        val outputPath = runOutputPath(experimentPath, runNumber, runs)
+        new java.io.File(outputPath).mkdirs()
+        new java.io.File(s"${outputPath}logs").mkdirs()
+        // TODO: This is side-effect-ful. It correctly sets the MDC for the current thread, but it clears out the prior value.
+        val mdcCloseable = MDC.putCloseable(mdcKey, outputPath)
+        Using(mdcCloseable) { _ =>
+          given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
+
+          val points = AtomicReference(Set.empty[DataPoint[Sample]])
+          val prospects = AtomicReference(Set.empty[DataPoint[Point]])
+
+          logger.trace("Creating dispatcher actor system for run {}.", runNumber)
+
+          val dispatcher = try {
+            ActorSystem(
+              Dispatcher(points, prospects),
+              s"DispatcherSystem-${runNumber.formatted("%03d")}"
+            )
+          } catch {
+            case e: Exception =>
+              logger.error(
+                "Error while creating dispatcher actor system: {}",
+                e.getMessage
+              )
+              throw e
+          }
+          logger.trace("Got dispatcher reference")
+
+          logger.trace("Started queue sampler")
+          val queueLengths = AtomicReference(List[(Long, Int)]())
+          val startTime = System.currentTimeMillis()
+          val queueSampler = dispatcher.scheduler.scheduleAtFixedRate(
+            100.milliseconds,
+            100.milliseconds
+          ) { () =>
+            given Timeout = 1.second
+            given Scheduler = dispatcher.scheduler
+            dispatcher
+              .ask[Dispatcher.RequestedPoints](Dispatcher.RequestPoints(_))
+              .map { points =>
+                queueLengths.updateAndGet(x =>
+                  (System.currentTimeMillis() - startTime, points.points.size) :: x
+                )
+              }
+          }
+          logger.trace("Started queue sampler")
+
+          val scheduledTask = dispatcher.scheduler.scheduleOnce(
+            durationMs,
+            () => {
+              // Send a stop message so it can stop things better.
+              given Timeout = 5.seconds
+              given Scheduler = dispatcher.scheduler
+              Await.result(
+                dispatcher
+                  .ask(Dispatcher.Stop(_)),
+                5.seconds
+              )
+              queueSampler.cancel()
+              dispatcher.terminate()
+            }
+          )
+          try {
+            Await.result(dispatcher.whenTerminated, durationMs.plus(10.seconds))
+          } catch {
+            case e: Exception =>
+              logger.error(
+                "Error while waiting for system termination: {}",
+                e.getMessage
+              )
+          }
+
+          logger.trace("Processing thread finished for run {}.", runNumber)
+
+          // Not sure why, but the chart creation works fine outside the Platform thread, but if then try to add those charts to the UI, it doesn't work.
+          if (!headless) {
+            Platform.runLater(() => {
+              val (
+                pointsChart,
+                points2DChart,
+                clusterAnalysisChart,
+                lengthSamplesChart
+              ) = createAndSaveCharts(points, prospects, queueLengths, outputPath)
+              controller.pointsChartProperty() = Option(pointsChart)
+              controller.points2DChartProperty() = Option(points2DChart)
+              controller.clusterAnalysisChartProperty() =
+                Option(clusterAnalysisChart)
+              controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
+            })
+          } else {
+            createAndSaveCharts(points, prospects, queueLengths, outputPath)
+          }
+        }
+      }
+
+      (1 to runs).foreach(runSingleExperiment)
+      MDC.put(mdcKey, experimentPath) 
+
+      if (headless) {
         Platform.exit()
       }
+    }.andThen {
+      case scala.util.Success(_) =>
+        logger.info("All runs completed successfully.")
+      case scala.util.Failure(exception) =>
+        logger.error("Error in processing thread: {}", exception.getMessage)
     }
   }
 }

@@ -72,29 +72,28 @@ final case class ChooseState(
       * In this case, the control variable is the queue length of tasks
       * available to run, weighted by "weightPerProspect".
       */
-    def observeControlVariable(): Future[WorkerState] =
-      dispatcher
-        .ask[Dispatcher.RequestedPoints](Dispatcher.RequestPoints(_))
-        .map(_.points)
-        .map({
-          case s if s.nonEmpty =>
-            val value = s.size * weightPerProspect
+    def observeControlVariable(): WorkerState = {
+      val points = Await.result(dispatcher
+        .ask[Dispatcher.RequestedPoints](Dispatcher.RequestPoints(_)), 3.seconds).points
+      points match {
+        case s if s.nonEmpty =>
+          val value = s.size * weightPerProspect
+          logger.trace(
+            "Worker has {} prospects, value is {}, preference is {}",
+            s.size,
+            value,
+            preference
+          )
+          if (value < preference) {
             logger.trace(
-              "Worker has {} prospects, value is {}, preference is {}",
+              "Creating Explorer because {} * {} = {} is less than {}.",
               s.size,
+              weightPerProspect,
               value,
               preference
             )
-            if (value < preference) {
-              logger.trace(
-                "Creating Explorer because {} * {} = {} is less than {}.",
-                s.size,
-                weightPerProspect,
-                value,
-                preference
-              )
-              createExplorer()
-            } else {
+            createExplorer()
+          } else {
               val prospect = Random.shuffle(s).head
               logger.trace(
                 "Creating Exploiter because {} * {} = {} is greater than {} for point {}",
@@ -107,14 +106,14 @@ final case class ChooseState(
               createExploiter(prospect)
             }
 
-          case _ =>
-            logger
-              .trace("Creating Explorer because no prospects are available.")
-            createExplorer()
-        })
-        
-    Await.result(observeControlVariable(), 3.seconds)
+        case _ =>
+          logger
+            .trace("Creating Explorer because no prospects are available.")
+          createExplorer()
+      }
 
+    }
+    
+    observeControlVariable()
   }
-
 }

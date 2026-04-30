@@ -7,4 +7,5 @@ target/
 /experiments/
 /testconf/logs/
 /testconf/*.png
+/testconf/run*/
 .DS_Store

@@ -23,6 +23,8 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.util.Success
 import scala.util.Failure
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 
 /** Actor that controls the worker threads.
   */
@@ -167,7 +169,8 @@ object Worker {
       pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
   )(implicit
       context: ActorContext[Command],
-      config: Config
+      config: Config,
+      mdc: Map[String, String]
   ): Behavior[Command] =
     Behaviors
       .receiveMessage[Command] { msg =>
@@ -194,22 +197,32 @@ object Worker {
             )
             val thread = new Thread(
               () => {
-                var phase: WorkerState = ExplorerState(
-                  (
-                    BigDecimal(Random.nextDouble()),
-                    BigDecimal(Random.nextDouble())
-                  ),
-                  kernelFn,
-                  preference,
-                  dispatcher
-                )
-                while (running.get()) {
-                  implicit val dpSampleActor
-                      : ActorRef[DataPointActor.Create[Sample]] =
-                    sampleActor.get
-                  implicit val dpPointActor
-                      : ActorRef[DataPointActor.Create[Point]] = pointActor.get
-                  phase = phase()
+                val logger = LoggerFactory.getLogger(s"eusocialcooperation.scheduler.Worker.${context.self.path.name}")
+                mdc.map { case (key, value) => MDC.put(key, value) }
+
+                try {
+                  var phase: WorkerState = ExplorerState(
+                    (
+                      BigDecimal(Random.nextDouble()),
+                      BigDecimal(Random.nextDouble())
+                    ),
+                    kernelFn,
+                    preference,
+                    dispatcher
+                  )
+                  while (running.get()) {
+                    implicit val dpSampleActor
+                        : ActorRef[DataPointActor.Create[Sample]] =
+                      sampleActor.get
+                    implicit val dpPointActor
+                        : ActorRef[DataPointActor.Create[Point]] = pointActor.get
+                    phase = phase()
+                  }
+                } catch {
+                  case e: Exception =>
+                    logger.error(
+                      s"Worker ${context.self.path.name} encountered error in worker thread: ${e.getMessage}"
+                    )
                 }
               },
               s"Worker Thread ${context.self.path.name}"
