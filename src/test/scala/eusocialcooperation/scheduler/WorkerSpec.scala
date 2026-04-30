@@ -12,6 +12,15 @@ import org.apache.pekko.actor.typed.Scheduler
 import java.util.concurrent.atomic.AtomicReference
 import com.typesafe.config.Config
 import org.scalamock.scalatest.MockFactory
+import org.apache.pekko.actor.typed.scaladsl.Behaviors
+import org.apache.pekko.Done
+import eusocialcooperation.scheduler.distributions.DistributionStrategy
+import scala.util.Success
+import eusocialcooperation.scheduler.worker.states.ExplorerState
+import scala.concurrent.Future
+import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
+import scala.concurrent.ExecutionContext
+import org.apache.pekko.actor.typed.ActorRef
 
 class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory {
 
@@ -28,7 +37,11 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     testKit.shutdownTestKit()
   }
 
-  val defaultLoopDelayMs: Long = 1000
+  def getDistributionConfigNode() = {
+    val distributionConfig = stub[Config]
+    (distributionConfig.getString).when("type").returning("uniform")
+    distributionConfig
+  }
 
   // Kernel that always returns 1.0 so runExplorer sleeps 0 ms in tests
   val testKernelFn: Worker.KernelFn = (_, _) => BigDecimal(1.0)
@@ -41,37 +54,83 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    
+  
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
-    worker should not be null
-    testKit.stop(worker)
+    try {
+      worker should not be null
+    } finally {
+      testKit.stop(worker)
+    }
   }
 
   test("Worker stops when it receives a Stop message") {
-    implicit val config: Config = mock[Config]
+    given config: Config = mock[Config]
     val workerConfig = mock[Config]
     (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getMilliseconds).expects(Worker.loopDelayConfigKey).returning(defaultLoopDelayMs).atLeastOnce()
+
     val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
-    Await.result(worker.ask(Worker.Stop(_)), 5.seconds)
-    testKit.stop(worker)
+    try {
+      val response = Await.result[Worker.WorkerStopped](worker.ask(Worker.Stop(_)), 5.seconds)
+      response.result shouldBe a[Success[Unit]]
+    } finally {
+      testKit.stop(worker)
+    }
   }
 
   test("Worker handles Stop message when it has started the thread") {
+    given ExecutionContext = ExecutionContext.global
+    implicit val config: Config = mock[Config]
+    val workerConfig = mock[Config]
+    val distributionConfig = mock[Config]
+    (config.getConfig).expects(Worker.workersConfigKey).returns(workerConfig)
+    (workerConfig.getConfig).expects(DistributionStrategy.distributionConfigKey).returns(distributionConfig)
+    (distributionConfig.getString).expects("type").returning("uniform")
+    val workerThreadFactory: Worker.WorkerThreadFactory = (_, _, _, _) => Future.successful(())
+
+    // Need to start a DataPoint worker for the start-up sequence of Worker to find.
+    given dpaSample: ActorRef[DataPointActor.Command] = testKit.createTestProbe[DataPointActor.Command]().ref
+    given dpaPoint: ActorRef[DataPointActor.Command] = testKit.createTestProbe[DataPointActor.Command]().ref
+
+    val workerProbe = testKit.createTestProbe[Worker.Command]()
+    val worker = testKit.spawn(Behaviors.monitor(workerProbe.ref, Worker(testKernelFn, dispatcherProbe.ref, workerThreadFactory)))
+
+    try {
+      // Wait for the worker to finish starting.
+      worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Sample], Set(dpaSample)))
+      worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Point], Set(dpaPoint)))
+      Thread.sleep(1000) // Wait for the scheduled job to execute
+      val response = Await.result[Worker.WorkerStopped](worker.ask(Worker.Stop(_)), 60.seconds)
+      response.result shouldBe a[Success[Unit]]
+    } finally {
+      testKit.stop(worker)
+    }
+  }
+
+  test("Worker reports error when it receives a Stop message when the thread failed") {
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     implicit val config: Config = mock[Config]
     val workerConfig = mock[Config]
-    (config.getConfig).expects("workers").returns(workerConfig)
-    (workerConfig.getMilliseconds).expects(Worker.loopDelayConfigKey).returning(defaultLoopDelayMs).atLeastOnce()
+    val distributionConfig = mock[Config]
+    (config.getConfig).expects(Worker.workersConfigKey).returns(workerConfig)
+    (workerConfig.getConfig).expects(DistributionStrategy.distributionConfigKey).returns(distributionConfig)
+    (distributionConfig.getString).expects("type").returning("uniform")
+    val workerThreadFactory: Worker.WorkerThreadFactory = (_, _, _, _) => Future.failed(new RuntimeException("Thread failed"))
 
     // Need to start a DataPoint worker for the start-up sequence of Worker to find.
-    val dpa = testKit.spawn(DataPointActor[Sample](new AtomicReference[Set[DataPoint[Sample]]](Set.empty)))
+    given dpaSample: ActorRef[DataPointActor.Command] = testKit.createTestProbe[DataPointActor.Command]().ref
+    given dpaPoint: ActorRef[DataPointActor.Command] = testKit.createTestProbe[DataPointActor.Command]().ref
 
-    val worker = testKit.spawn(Worker(testKernelFn, dispatcherProbe.ref))
-    // Wait for the worker to finish starting.
-    Thread.sleep(1500) // Wait for the scheduled job to execute
-    testKit.stop(worker)
-    Thread.sleep(500) // Wait for the worker to process the stop message and shut down
+    val workerProbe = testKit.createTestProbe[Worker.Command]()
+    val worker = testKit.spawn(Behaviors.monitor(workerProbe.ref, Worker(testKernelFn, dispatcherProbe.ref, workerThreadFactory)))
+    try {
+      // Wait for the worker to finish starting.
+      worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Sample], Set(dpaSample)))
+      worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Point], Set(dpaPoint)))
+      //Thread.sleep(1000) // Wait for the scheduled job to execute
+      val response = Await.result[Worker.WorkerStopped](worker.ask(Worker.Stop(_)), 5.seconds)
+      response.result shouldBe a[scala.util.Failure[Unit]]
+    } finally {}
+      testKit.stop(worker)
   }
 
 /*
@@ -101,8 +160,11 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
 
     val alternateKernel: Worker.KernelFn = (x, y) => (x + y) / 2
     val worker = testKit.spawn(Worker(alternateKernel, dispatcherProbe.ref))
+    try {
     worker should not be null
-    testKit.stop(worker)
+    } finally {
+      testKit.stop(worker)
+    }
   }
 }
 
