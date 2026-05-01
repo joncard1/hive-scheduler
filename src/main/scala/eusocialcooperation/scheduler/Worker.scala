@@ -23,6 +23,8 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.util.Success
 import scala.util.Failure
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import scala.util.Try
 
 /** Actor that controls the worker threads.
@@ -158,8 +160,9 @@ object Worker {
       ActorRef[Dispatcher.Command],
       BigDecimal,
       AtomicBoolean
-  ) => (Config, ActorContext[Command], ActorRef[DataPointActor.Create[Sample]], ActorRef[DataPointActor.Create[Point]]) ?=> Future[Unit]
+  ) => (config: Config, context: ActorContext[Command], dpaSample: ActorRef[DataPointActor.Create[Sample]], dpaPoint: ActorRef[DataPointActor.Create[Point]], mdc: Map[String, String]) ?=> Future[Unit]
 
+  // TODO: Not sure I like doing this with Future instead of Thread. It's probably more efficient, generally, but I think it's confusing the traceability of the workers. I suspect I'd have to add another environment parameter for the worker name, because the Futures are being run on the same threads.
   def defaultWorkerThreadFactory(
     kernelFn: KernelFn,
     dispatcher: ActorRef[Dispatcher.Command],
@@ -169,26 +172,35 @@ object Worker {
       config: Config,
       context: ActorContext[Command],
       sampleActor: ActorRef[DataPointActor.Create[Sample]],
-      pointActor: ActorRef[DataPointActor.Create[Point]]
+      pointActor: ActorRef[DataPointActor.Create[Point]],
+      mdc: Map[String, String]
   ) = {
     import context.executionContext
     given Scheduler = context.system.scheduler
     Future {
-      var phase: WorkerState = ExplorerState(
-        (
-          BigDecimal(Random.nextDouble()),
-          BigDecimal(Random.nextDouble())
-        ),
-        kernelFn,
-        preference,
-        dispatcher
-      )
-      while (running.get()) {
-        implicit val dpSampleActor: ActorRef[DataPointActor.Create[Sample]] =
-          sampleActor
-        implicit val dpPointActor: ActorRef[DataPointActor.Create[Point]] =
-          pointActor
-        phase = phase()
+      val logger = LoggerFactory.getLogger(s"eusocialcooperation.scheduler.Worker.${context.self.path.name}")
+      mdc.map { case (key, value) => MDC.put(key, value) }
+
+      try {
+        var phase: WorkerState = ExplorerState(
+          (
+            BigDecimal(Random.nextDouble()),
+            BigDecimal(Random.nextDouble())
+          ),
+          kernelFn,
+          preference,
+          dispatcher
+        )
+        while (running.get()) {
+          implicit val dpSampleActor: ActorRef[DataPointActor.Create[Sample]] =
+            sampleActor
+          implicit val dpPointActor: ActorRef[DataPointActor.Create[Point]] =
+            pointActor
+          phase = phase()
+        }
+      } catch {
+        case e: Exception =>
+          logger.error(s"worker ${context.self.path.name} encountered error in worker thread: ${e}")
       }
     }
   }
@@ -224,7 +236,8 @@ object Worker {
       pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
   )(implicit
       context: ActorContext[Command],
-      config: Config
+      config: Config,
+      mdc: Map[String, String]
   ): Behavior[Command] =
     Behaviors
       .receiveMessage[Command] { msg =>

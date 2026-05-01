@@ -82,7 +82,7 @@ object Dispatcher {
     * @param replyTo
     *   The actor reference to which to send the stop confirmation.
     */
-  final case class WorkersStopped(replyTo: ActorRef[Response]) extends Command
+  final case class WorkersStopped(e: Option[Throwable],replyTo: ActorRef[Response]) extends Command
 
   /** The trait that represents outgoing messages from the dispatcher.
     */
@@ -269,19 +269,22 @@ object Dispatcher {
           scala.concurrent.ExecutionContext.global
         ctx.pipeToSelf(Future.sequence(workers.map(_.ask(Worker.Stop(_))))) {
           case scala.util.Success(_) =>
-            ctx.log.info("All workers stopped successfully.")
-            WorkersStopped(replyTo)
+            WorkersStopped(None, replyTo)
           case scala.util.Failure(e) =>
-            ctx.log.error("Error while stopping workers: {}", e.getMessage)
             WorkersStopped(
+              Some(e),
               replyTo
             ) // Still attempt to stop self even if workers fail to stop
         }
         Behaviors.same
-      case WorkersStopped(replyTo) =>
+      case WorkersStopped(None, replyTo) =>
         ctx.log.info("All workers have been stopped, now stopping dispatcher.")
         ctx.stop(sampleActor)
         ctx.stop(pointActor)
+        replyTo ! Stopped()
+        Behaviors.stopped
+      case WorkersStopped(Some(e), replyTo) => 
+        ctx.log.error("Error while stopping workers: {}", e.getMessage)
         replyTo ! Stopped()
         Behaviors.stopped
     }
