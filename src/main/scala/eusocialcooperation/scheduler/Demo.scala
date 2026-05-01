@@ -74,8 +74,10 @@ import scala.util.Using
   */
 object Demo extends JFXApp3 {
 
-  val durationConfigKey = "duration"
-  val mdcKey = "experiment"
+  private[scheduler] val durationConfigKey = "duration"
+  private[scheduler] val mdcKey = "experiment"
+  private[scheduler] val headlessModeFxmlFileName = "/headless-mode.fxml"
+  val mainLayoutFxmlFileName = "/main-layout.fxml"
 
   def parseRunsParam(namedParameters: Map[String, String]): Int = {
     namedParameters.get("runs") match {
@@ -121,11 +123,31 @@ object Demo extends JFXApp3 {
         throw new IllegalArgumentException("Experiment path must be non-empty.")
       case Some(path) if !path.endsWith("/") => path + "/"
       case Some(path)                        => path
+    } match {
+      case path if !File(path).exists() =>
+        throw new IllegalArgumentException(s"Experiment path '$path' does not exist.")
+      case path => path
     }
     val namedParameters = this.parameters.named.toMap
     val runs = parseRunsParam(namedParameters)
+
     val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
     val headless = effectiveHeadless(requestedHeadless, runs)
+
+    val parentPath = namedParameters.get("parent") match {
+      case None => None
+      case Some(path) if path.isEmpty() =>
+        throw new IllegalArgumentException("Parent path must be non-empty.")
+      case Some(path) if !path.endsWith("/") => Some(path + "/")
+      case Some(path) => 
+        Some(path)
+    } match {
+      case None => None
+      case Some(path) if !File(path).exists() =>
+        throw new IllegalArgumentException(s"Parent path '$path' does not exist.")
+      case Some(path) =>
+        Some(path)
+    }
 
     // Creates a configuration that lets the logging data be output to the folder where the experiment is being conducted, keeping the run data consolidated together.
     MDC.put(mdcKey, experimentPath) // This will be used in the logback configuration to determine where to write logs for this experiment.
@@ -135,16 +157,20 @@ object Demo extends JFXApp3 {
       LoggerFactory.getLogger(s"${this.getClass.getPackage.getName}.Demo")
 
     // Puts the <experimentPath>/config folder into the classpath. Would actually prefer not to put the whole folder into the classpath, but that seems to be how it works. I wonder how serious a vulnerability/feature this is, because it opens up putting logback.xml or similar in the config folder which could surreptitiously change the experiment behavior.
-    // TODO: Probably should verify it exists.
-    val configFile = new File(s"${experimentPath}$experimentConfigPath")
-    val folderUrl: URL = configFile.toURI.toURL
+    
     val currentLoader = Thread.currentThread().getContextClassLoader
-    val arr: Array[URL] = Array(folderUrl)
-    val configLoader = new URLClassLoader(arr, currentLoader)
+    def getConfigLoader(path: String): URLClassLoader = {
+      val configFile = new File(s"${path}$experimentConfigPath")
+      val folderUrl: URL = configFile.toURI.toURL
+      val arr: Array[URL] = Array(folderUrl)
+      new URLClassLoader(arr, currentLoader)
+    }
 
-    given config: Config = ConfigFactory
-      .load(configLoader, experimentConfigurationFileName)
-      .getConfig(this.getClass().getPackage().getName())
+    def getConfigFromPath(path: String) = ConfigFactory.load(getConfigLoader(path), experimentConfigurationFileName)
+
+    given config: Config = parentPath.fold(getConfigFromPath(experimentPath)) { parent =>
+        getConfigFromPath(experimentPath).withFallback(getConfigFromPath(parent))
+    }.getConfig(this.getClass().getPackage().getName())
 
     // Loads the duration to run the experiment from the configuration.
     val durationMs = {
@@ -159,17 +185,19 @@ object Demo extends JFXApp3 {
     // logger.debug("Starting demo with duration: {}", durationMs)
 
     // Initializes the UI. I have a strong preference for FXML files rather than programmatic UI; I wish JavaFX was as good as Adobe Flex was.
-    val fxmlUrl = this.getClass().getResource("/main-layout.fxml")
+    val fxmlUrl = this.getClass().getResource(fxmlFileName(headless))
     val loader = new FXMLLoader(fxmlUrl)
     loader.load()
-    val controller = loader.getController[MainLayoutController]()
-    controller.experimentPathProperty() = experimentPath
+    var controller = None: Option[MainLayoutController]
+    if (!headless) {
+      logger.info("UI initialized, starting processing thread.")
+      val controller = Some(loader.getController[MainLayoutController]())
+      controller.get.experimentPathProperty() = experimentPath
+    }
     stage = new JFXApp3.PrimaryStage {
-      if (!headless) {
-        val root = loader.getRoot[jfxl.GridPane]()
-        scene = new Scene(new GridPane(root))
-        title = "Eusocial Cooperation Scheduler Demo"
-      }
+      val root = loader.getRoot[jfxl.GridPane]()
+      scene = new Scene(new GridPane(root))
+      title = "Eusocial Cooperation Scheduler Demo"
     }
 
     // Start the processing thread. Can't be launched in the thread running "start" or it will block the launching of the window.
@@ -282,12 +310,12 @@ object Demo extends JFXApp3 {
               // Send a stop message so it can stop things better.
               given Timeout = 5.seconds
               given Scheduler = dispatcher.scheduler
+              queueSampler.cancel()
               Await.result(
                 dispatcher
                   .ask(Dispatcher.Stop(_)),
                 5.seconds
               )
-              queueSampler.cancel()
               dispatcher.terminate()
             }
           )
@@ -312,11 +340,13 @@ object Demo extends JFXApp3 {
                 clusterAnalysisChart,
                 lengthSamplesChart
               ) = createAndSaveCharts(points, prospects, queueLengths, outputPath)
-              controller.pointsChartProperty() = Option(pointsChart)
-              controller.points2DChartProperty() = Option(points2DChart)
-              controller.clusterAnalysisChartProperty() =
-                Option(clusterAnalysisChart)
-              controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
+              controller.map(controller => {
+                controller.pointsChartProperty() = Option(pointsChart)
+                controller.points2DChartProperty() = Option(points2DChart)
+                controller.clusterAnalysisChartProperty() =
+                  Option(clusterAnalysisChart)
+                controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
+              })
             })
           } else {
             createAndSaveCharts(points, prospects, queueLengths, outputPath)
@@ -337,11 +367,13 @@ object Demo extends JFXApp3 {
         logger.error("Error in processing thread: {}", exception.getMessage)
     }
   }
+
+  def fxmlFileName(headless: Boolean): String =
+    if (headless) headlessModeFxmlFileName else mainLayoutFxmlFileName
 }
 // TODO list:
 // 1. With a low exploration radius and a low weight per prospect, I would have thought the low areas would be well-explored, but it seems not. I would have thought there would be more low-threshold points when submitting the prospects, so the number of exploiters would be high. Which it may be; that would show up as duplicates, not density. I would have to re-introduce some randomness around the prospect to do that.
 // 7. Do the main chart with a colorbar legend with the color determined by the sequence #.
 // 10. Change the behavior of the explorer to only explore a maximum number of prospects, rather than having to find the edge.
 // 14. JFree seems to take longer, but I think I generate a lot more data now.
-// 15. Might be nice to say "run this whole family of experiments" and it loads a main configuration file and then, for each folder, runs the experiment inside, merging the configuration file. Or just "run this experiment, and get the parent configuration from above it"
-// 9. Make the kernel function configurable?
+// 16. I think there needs to be a listener so that when the window closes, the processing thread is interrupted.

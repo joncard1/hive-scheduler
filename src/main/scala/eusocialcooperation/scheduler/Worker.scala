@@ -162,6 +162,7 @@ object Worker {
       AtomicBoolean
   ) => (config: Config, context: ActorContext[Command], dpaSample: ActorRef[DataPointActor.Create[Sample]], dpaPoint: ActorRef[DataPointActor.Create[Point]], mdc: Map[String, String]) ?=> Future[Unit]
 
+  // TODO: Not sure I like doing this with Future instead of Thread. It's probably more efficient, generally, but I think it's confusing the traceability of the workers. I suspect I'd have to add another environment parameter for the worker name, because the Futures are being run on the same threads.
   def defaultWorkerThreadFactory(
     kernelFn: KernelFn,
     dispatcher: ActorRef[Dispatcher.Command],

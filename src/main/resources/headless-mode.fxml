@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.net.*?>
+<?import javafx.geometry.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+
+<GridPane xmlns:fx="http://javafx.com/fxml">
+    <padding><Insets top="5" right="5" bottom="5" left="5"/></padding>
+    <Label text="Running in headless mode. No GUI will be displayed." GridPane.rowIndex="0" GridPane.columnIndex="0" />
+</GridPane>

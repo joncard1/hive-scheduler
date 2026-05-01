@@ -43,4 +43,12 @@ class DemoSpec extends AnyFunSuite with Matchers {
   test("effectiveHeadless forces headless for multi-run") {
     Demo.effectiveHeadless(requestedHeadless = false, runs = 2) shouldEqual true
   }
+
+  test("Running in non-headless mode loads the correct FXML file") {
+    Demo.fxmlFileName(headless = false) shouldBe Demo.mainLayoutFxmlFileName
+  }
+
+  test("Running in headless mode loads the correct FXML file") {
+    Demo.fxmlFileName(headless = true) shouldBe Demo.headlessModeFxmlFileName
+  }
 }
