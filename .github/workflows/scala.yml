@@ -42,6 +42,7 @@ jobs:
         output: both
         badge: true
         format: markdown
-    - uses: marocchino/sticky-pull-request-comment@v3
+    - name: Update pull request with code coverage results
+      uses: marocchino/sticky-pull-request-comment@v3
       with:
         path: code-coverage-results.md
