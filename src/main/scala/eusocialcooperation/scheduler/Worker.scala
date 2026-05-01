@@ -25,6 +25,7 @@ import scala.util.Success
 import scala.util.Failure
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
+import scala.util.Try
 
 /** Actor that controls the worker threads.
   */
@@ -67,7 +68,7 @@ object Worker {
     * @param replyTo
     *   The actor to whom to send a message confirming the thread stopped.
     */
-  case class Stop(replyTo: ActorRef[Done]) extends Command
+  case class Stop(replyTo: ActorRef[WorkerStopped]) extends Command
 
   /** A message that confirms to the worker the thread stopped, allowing the
     * actor to send the response to the calling actor that the work has stopped.
@@ -77,7 +78,12 @@ object Worker {
     * @param replyTo
     *   The reference to send the confirmation that the worker has been stopped.
     */
-  case class WorkerThreadStopped(replyTo: ActorRef[Done]) extends Command
+  case class WorkerThreadStopped(
+      result: Try[Unit],
+      replyTo: ActorRef[WorkerStopped]
+  ) extends Command
+
+  case class WorkerStopped(result: Try[Unit])
 
   /** A message containing the listing of actors that create DataPoint monads.
     *
@@ -88,7 +94,7 @@ object Worker {
     *   The listing of actors that create the requested type of DataPoint
     *   monads.
     */
-  private final case class DPActorListing(
+  private[scheduler] final case class DPActorListing(
       actors: Listing
   ) extends Command
 
@@ -110,6 +116,16 @@ object Worker {
   def apply(
       kernelFn: KernelFn,
       dispatcher: ActorRef[Dispatcher.Command]
+  )(implicit config: Config, mdc: Map[String, String]): Behavior[Command] = apply(
+    kernelFn,
+    dispatcher,
+    defaultWorkerThreadFactory
+  )
+  
+  def apply(
+      kernelFn: KernelFn,
+      dispatcher: ActorRef[Dispatcher.Command],
+      workerThreadFactory: WorkerThreadFactory
   )(implicit config: Config, mdc: Map[String, String]): Behavior[Command] =
     Behaviors.withMdc(mdc)(
       Behaviors.setup { implicit ctx =>
@@ -132,12 +148,61 @@ object Worker {
           pointKey,
           adapter
         )
-        waitingForDpActors(kernelFn, dispatcher)(using
+        waitingForDpActors(kernelFn, dispatcher, workerThreadFactory)(using
           ctx,
           config.getConfig(Worker.workersConfigKey)
         )
       }
     )
+
+  type WorkerThreadFactory = (
+      KernelFn,
+      ActorRef[Dispatcher.Command],
+      BigDecimal,
+      AtomicBoolean
+  ) => (config: Config, context: ActorContext[Command], dpaSample: ActorRef[DataPointActor.Create[Sample]], dpaPoint: ActorRef[DataPointActor.Create[Point]], mdc: Map[String, String]) ?=> Future[Unit]
+
+  def defaultWorkerThreadFactory(
+    kernelFn: KernelFn,
+    dispatcher: ActorRef[Dispatcher.Command],
+    preference: BigDecimal,
+    running: AtomicBoolean
+  )(implicit
+      config: Config,
+      context: ActorContext[Command],
+      sampleActor: ActorRef[DataPointActor.Create[Sample]],
+      pointActor: ActorRef[DataPointActor.Create[Point]],
+      mdc: Map[String, String]
+  ) = {
+    import context.executionContext
+    given Scheduler = context.system.scheduler
+    Future {
+      val logger = LoggerFactory.getLogger(s"eusocialcooperation.scheduler.Worker.${context.self.path.name}")
+      mdc.map { case (key, value) => MDC.put(key, value) }
+
+      try {
+        var phase: WorkerState = ExplorerState(
+          (
+            BigDecimal(Random.nextDouble()),
+            BigDecimal(Random.nextDouble())
+          ),
+          kernelFn,
+          preference,
+          dispatcher
+        )
+        while (running.get()) {
+          implicit val dpSampleActor: ActorRef[DataPointActor.Create[Sample]] =
+            sampleActor
+          implicit val dpPointActor: ActorRef[DataPointActor.Create[Point]] =
+            pointActor
+          phase = phase()
+        }
+      } catch {
+        case e: Exception =>
+          logger.error(s"worker ${context.self.path.name} encountered error in worker thread: ${e}")
+      }
+    }
+  }
 
   /** Represents the state of the actor in which it has requested a listing of
     * actors that create DataPoint monads and is waiting for the system to
@@ -165,6 +230,7 @@ object Worker {
   private def waitingForDpActors(
       kernelFn: KernelFn,
       dispatcher: ActorRef[Dispatcher.Command],
+      workerThreadFactory: WorkerThreadFactory,
       sampleActor: Option[ActorRef[DataPointActor.Create[Sample]]] = None,
       pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
   )(implicit
@@ -174,7 +240,6 @@ object Worker {
   ): Behavior[Command] =
     Behaviors
       .receiveMessage[Command] { msg =>
-        val loopDelayMs = config.getMilliseconds(Worker.loopDelayConfigKey)
 
         // Provides the next state. Refactored here because it must be run in response to either the incoming listing of DataPoint[Sample] actors or DataPoint[Point] actors.
         def createNextState(
@@ -184,7 +249,10 @@ object Worker {
             pointActor: Option[ActorRef[DataPointActor.Create[Point]]]
         ) = {
           if (sampleActor.isDefined && pointActor.isDefined) {
-            implicit val scheduler: Scheduler = context.system.scheduler
+            given Scheduler = context.system.scheduler
+            given ExecutionContext = context.system.executionContext
+            given dpaSample: ActorRef[DataPointActor.Create[Sample]] = sampleActor.get
+            given dpaPoint: ActorRef[DataPointActor.Create[Point]] = pointActor.get
 
             // context.log.info(s"Worker ${context.self.path.name} found DataPointActor and is starting.")
             val running = new AtomicBoolean(true)
@@ -195,43 +263,16 @@ object Worker {
               "Worker starting thread with preference: {}",
               preference
             )
-            val thread = new Thread(
-              () => {
-                val logger = LoggerFactory.getLogger(s"eusocialcooperation.scheduler.Worker.${context.self.path.name}")
-                mdc.map { case (key, value) => MDC.put(key, value) }
-
-                try {
-                  var phase: WorkerState = ExplorerState(
-                    (
-                      BigDecimal(Random.nextDouble()),
-                      BigDecimal(Random.nextDouble())
-                    ),
-                    kernelFn,
-                    preference,
-                    dispatcher
-                  )
-                  while (running.get()) {
-                    implicit val dpSampleActor
-                        : ActorRef[DataPointActor.Create[Sample]] =
-                      sampleActor.get
-                    implicit val dpPointActor
-                        : ActorRef[DataPointActor.Create[Point]] = pointActor.get
-                    phase = phase()
-                  }
-                } catch {
-                  case e: Exception =>
-                    logger.error(
-                      s"Worker ${context.self.path.name} encountered error in worker thread: ${e.getMessage}"
-                    )
-                }
-              },
-              s"Worker Thread ${context.self.path.name}"
-            )
-            thread.setDaemon(true)
-            thread.start()
+            val thread = workerThreadFactory(kernelFn, dispatcher, preference, running)
             active(running, thread, sampleActor.get, pointActor.get)
           } else {
-            waitingForDpActors(kernelFn, dispatcher, sampleActor, pointActor)
+            waitingForDpActors(
+              kernelFn,
+              dispatcher,
+              workerThreadFactory,
+              sampleActor,
+              pointActor
+            )
           }
         }
 
@@ -278,7 +319,7 @@ object Worker {
             context.log.info(
               s"Worker ${context.self.path.name} stopping while waiting for DataPointActors."
             )
-            replyTo ! Done
+            replyTo ! WorkerStopped(Success(()))
             Behaviors.stopped
           case event =>
             context.log.warn(
@@ -317,7 +358,7 @@ object Worker {
   // TODO: I wonder if sampleActorRef or pointActorRef are worth passing through to this state. It doesn't seem to be needed.
   private def active(
       running: AtomicBoolean,
-      thread: Thread,
+      thread: Future[Unit],
       sampleActorRef: ActorRef[DataPointActor.Create[Sample]],
       pointActorRef: ActorRef[DataPointActor.Create[Point]]
   )(implicit
@@ -331,25 +372,13 @@ object Worker {
           s"Worker ${context.self.path.name} stopping from message."
         )
         running.set(false)
-        context.pipeToSelf(Future { thread.join() }) {
-          case Success(_) => WorkerThreadStopped(replyTo)
-          case Failure(e) =>
-            context.log.error(
-              s"Worker ${context.self.path.name} encountered error while stopping: ${e.getMessage}"
-            )
-            WorkerThreadStopped(
-              replyTo
-            ) // Still reply to the sender to avoid hanging, even if there was an error.
-        }
-        context.log.debug(
-          s"Worker ${context.self.path.name} stopped from message."
-        )
+        context.pipeToSelf(thread)(WorkerThreadStopped(_, replyTo))
         Behaviors.same
-      case WorkerThreadStopped(replyTo) =>
+      case WorkerThreadStopped(result, replyTo) =>
         context.log.info(
           s"Worker ${context.self.path.name} stopped successfully."
         )
-        replyTo ! Done
+        replyTo ! WorkerStopped(result)
         Behaviors.stopped
       case DPActorListing(actors)
           if actors.isForKey(DataPointActor.DataPointActorKey[Sample]) && actors
