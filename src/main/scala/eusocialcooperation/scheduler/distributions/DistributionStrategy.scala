@@ -124,7 +124,7 @@ class NormalDistributionStrategy(mean: BigDecimal, stddev: BigDecimal)
   * system to prevent a negative response curve in the low value range.
   *
   * @param scale
-  * The minimum value of the distribution. Should default to 0.
+  * The value of the randomly generated variable where above (1-scale) the function will return greater than 1.
   * @param shape
   * A positive number that determines the steepness of the distribution.
   */
@@ -133,7 +133,7 @@ class ParetoDistributionStrategy(scale: BigDecimal, shape: BigDecimal)
     extends DistributionStrategy {
   override def apply(): BigDecimal = {
     val u = Random.nextDouble()
-    // Not sure I see the point of subtracting from 1, but Copilot suggested it and I can't see any reason why it's a problem.
-    scale / math.pow(1 - u, 1 / shape.toDouble)
+    // Subtracting from 1 changes the meaning of the variables a little bit. The asymptote is vertical at x=1, and the resulting values increase as the randomly generated value gets larger (closer to 1), which is more intuitive for this application. The value of the function = 1 when x = (1 - scale).
+    scale.toDouble / math.pow(1 - u, 1 / shape.toDouble)
   }
 }

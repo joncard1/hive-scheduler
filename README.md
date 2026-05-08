@@ -10,41 +10,110 @@ Stochastic Gradiant Response is a type of emergent behavior characterised by a l
 
 This is different from other forms of "emergent behavior" algorithms such as the Boids algorithm (REFERENCE) or Cucker-Smale algorithm modeling actions like flocking behavior. In a flock (or school of fish), the important behavior is that the entire flock converges on a shared value, such as each bird adopting the same flight vector as the average flight vector of the flock, because the agents want both to avoid leaving the flock and also to avoid running into other birds in the flock. However, the specific vector is not important. Stochastic Gradiant Response provides and algorithm for agents to decide whether to join in a joint enterprise, _or not to join the enterprise_, in a way that ensures that resources are preferentially allocated to the highest priority tasks.
 
+## Design
+
+The kernel function represents the space the algorithm is attempting to explore. An arbitrary goal was set to try to gather as many (x, y) pairs for which the value F(x, y) is close to 0. Points for which F(x, y) is "high" (closer to 1) is considered wasted work. (TODO: I should create a report of total value, not just exploited points. Exploited points weighted by value). Exploring this space with multiple workers that do not require direction or assignment of tasks from a central authority is the goal.
+
+The major design goals of this project were
+1. demonstrate the Stochastic Gradient Response concept as clearly as possible,
+2. gather the metadata that would record the different executions of the algorithm under different metaparameters, demonstrating its ability to prioritize tasks based on their value and its behavior under different tuning conditions as transparently as possible, and
+3. record/report the data in a way that is useful for other users running the application for themselves, but is also compatible with more sophisticated data analysis tools.
+
+To these ends, I made the main datatype of the algorithm itself a tuple (BigDecimal, BigDecimal) for prospect points found by the explorers and a 3-tuple (BigDecimal, BigDecimal, BigDecimal) for points exploited, and the metadata gathered in the monad DataPoint. Points are lifted to DataPoint with the DataPoint.apply function and the metadata gathered therein is collected from implicit parameters rather than parameters of the function.
+
+Each experiment is executed out of a single experiment workspace with the experimental configuration (namely, the hyperparameters of the algorithm) defined in a configuration file called "experiment.conf" in a "config" subfolder. Each experiment has its logging output recorded in a "logs" subfolder so that different executions have their trace recorded separately. Data generated for an experiment execution are all stored in the experiment work folder to keep different executions separate. The generated data is, by default, output into a CSV file so it can be appended with other executions into a single larger dataset. (More complex data archiving may be coming soon). Each experiment can be configured to be run multiple times to create statistical significance. Each experiment execution can provide a --parent parameter to reference a folder that contains a "config" subfolder; the parent's "experiment.conf" file will provide defaults that the individual experiment folder will override. This enforces that non-overridden variables are consistent across runs intended to be comparable.
+
+To track the creation of points, all point creation is channeled through a single Pekko Actor so that all DataPoint monads are assigned sequence numbers from a single sequence. The is performed by the DataPoint.apply method outsourcing the creation of DataPoint instances to the DataPointActor.
+
+The Dispatcher represents the interface through which the various agents are created and through which the agents observe the world, but it does not assign work or play an active role in the agents' decision-making regarding their choice of work to perform. It creates a fixed number of Worker actors, each of which is responsible for spawning, monitoring, and stopping a processing thread that can either be exploring the world or exploiting points found by other agents. (These are now Futures, not threads, which seems to work better but I'm think the reporting needs updating to account for this) Each processing thread operates in one of three states: Explorer, Exploiter, or ChooseState, and each processing thread is assigned a "preference" that is generated according to the DistributionStrategy configured for the experiment.
+
+The Explorer state steps randomly around the phase space (from [0,0] and [1,1]) and executes the kernel function on its current space. If the point is sufficiently close to 0, it continues to sample in the region until it finds a point that is not sufficiently close to 0, and uses the number of points found as a measure of othe quality of the point. It then notifies the Dispatcher of a new prospect (the average location of all of the discovered points), as well as instructions on how long the point should remain in the queue. (This simulates a bee performing more repetitions of the "waggle dance" for high-quality patches of flowers to exploit) 
+
+The Exploiter state begins with a location of a prospect point. It chooses a point nearby (this is to avoid multiple exploiters who choose the same point from producing completely redundant data and simulates a bee travelling to the prospective flower patch and then choosing on-location flowers from which to gather pollen) and then runs the kernel function on a dense grid of points around that central location.
+
+The ChooseState state queries the Dispatcher for the list of prospects. The worker's preference is then consulted with regard to how long the list of prospects is; if the worker has a preference for a shorter list of prospects, the worker will choose one at random to work as an Exploiter; otherwise, the worker will become an Explorer and look for prospects. This simulates a bee exiting the hive and, if there are multiple bees performing the "waggle dance", the bee may choose to follow the directions in one dance or another, but the bee would have no way of knowing which bee has been present and performing for a long time, so it would not have any means of choosing the "best" patch. If the bee chooses to exploit, one strategy would be to follow the directions of the next bee to start a full repetition of its dance, which would effectively be random. (One unsimulated aspect of this scenario is that patches closer to the hive would be described with shorter dances, increasing the probability of being chosen by this method) (It should be noted that there isn't solid evidence that I know of that this is the algorithm followed by actual bees; I am only making the case that it _could be_ and _would work_)
+
+After the data is generated, there are two classes for post-processing: the Charter and the Archiver (these may be combined later). The Charter creates the chart objects that are both displayed in the UI component and are used to export the charts as images. (Most data visualization applications don't display scientific data very well; they primarily expect the X-axis to be categorical and to have values shared by all data series) The Archiver application exports the generated data for further analysis.
+
+The Demo class handles the various "plumbing" tasks of parsing the command-line arguments, reading the configuration file(s), establishing the logging output framework, starting the processing system, and initializing the GUI,
+
 ## Usage
+
+### Command-line Parameters
+
+experiment path
+: The first (and only) unnamed parameter ingested by the application should contain the path of the experiment folder. This should contain a folder "config" with a file "experiment.conf" containing the experiment configuration. This is the folder the data generated by the application will be written to.
+
+--runs
+: The number of runs of the experiment to run. If this is greater than 1, the experiment will run in "headless" mode and generate data separately for each "run" in a folder named "run-xxx", where "xxx" is the run number, stored inside the experiment folder. This defaults to 1.
+
+--headless
+: A boolean value whether to show the data in the GUI or not. If "--runs" is greater than 1, it will be in "headless" mode regardless of this parameter. This defaults to false.
+
+--parent
+: A path that should contain a folder "config" with a file "experiment.conf" in it that will provide default values for the hyperparameters of the algorithm.
 
 ### Parameters
 
 The application is provided at start-up with a reference to a folder that is expected to have a sub-folder named "config" that contains a properties file called "experiment.conf" in the format of the TypeSafe Configuration properties file. The following properties have meaning:
 
-eusocialcooperation.scheduler.duration:
-- The length of time to run the experiment. Required
+eusocialcooperation.scheduler.duration
+: The length of time to run the experiment. Required
 
-eusocialcooperation.scheduler.dispatcher.numWorkers:
-- The number of agents to use to explore the function. Required
+eusocialcooperation.scheduler.dispatcher.numWorkers
+: The number of agents to use to explore the function. Required
 
-eusocialcooperation.scheduler.workers.loopDelay:
-- An artificial delay introduced into the main loop of the workers. Optional, defaults to 50 ms. This is adjustable because it interacts with the variable delayPerProspect and numWorkers in establishing the probability of an agent seeing a task.
+eusocialcooperation.scheduler.workers.loopDelay
+: An artificial delay introduced into the main loop of the workers. Optional, defaults to 50 ms. This is adjustable because it interacts with the variable delayPerProspect and numWorkers in establishing the probability of an agent seeing a task.
 
-eusocialcooperation.scheduler.workers.explorer.numPointToExplore:
-- The number of points an explorer will search through before giving up if it hasn't found a prospect. Required.
+eusocialcooperation.scheduler.workers.explorer.numPointToExplore
+: The number of points an explorer will search through before giving up if it hasn't found a prospect. Required.
 
-eusocialcoooperation.scheduler.workers.explorer.threshold:
-- The threshold below which a point is considered a prospect. Required.
+eusocialcoooperation.scheduler.workers.explorer.threshold
+: The threshold below which a point is considered a prospect. Required.
 
-eusocialcoooperation.scheduler.workers.explorer.explorationRadius:
-- The distance an explorer will travel in a random direction to the next point to explore. Required.
+eusocialcoooperation.scheduler.workers.explorer.explorationRadius
+: The distance an explorer will travel in a random direction to the next point to explore. Required.
 
-eusocialcoooperation.scheduler.workers.explorer.delayPerProspect:
-- The amount of time a prospect is to remain visible to agents looking for a new task before it is dropped, per point discovered below the threshold. Required. For instance, if the explorer found 5 low spots, it will submit a prospect point that is at the average position of those 5 points, and request that the prospect remain visible for 5 * delayPerProspect.
+eusocialcoooperation.scheduler.workers.explorer.delayPerProspect
+: The amount of time a prospect is to remain visible to agents looking for a new task before it is dropped, per point discovered below the threshold. Required. For instance, if the explorer found 5 low spots, it will submit a prospect point that is at the average position of those 5 points, and request that the prospect remain visible for 5 * delayPerProspect.
 
-eusocialcooperation.scheduler.workeres.exploiter.increment:
-- The distance between points in the grid the exploiter will explore. Required.
+eusocialcooperation.scheduler.workeres.exploiter.increment
+: The distance between points in the grid the exploiter will explore. Required.
 
-eusocialcooperation.scheduler.workers.exploiter.fuzziness:
-- The upper-bound of the random offset introduced by the agent to avoid exactly duplicating the work of other agents that may have chosen this point.
-
-## Development
-
-### Design
+eusocialcooperation.scheduler.workers.exploiter.fuzziness
+: The upper-bound of the random offset introduced by the agent to avoid exactly duplicating the work of other agents that may have chosen this point.
 
 ## Project Layout
+
+The following folders are in the project:
+
+.github
+: contains the definition of the GitHub Actions that perform the continuous integration tasks for application maintenance.
+
+project
+: a folder that contains metadata about the project for the SBT build tool.
+
+src
+: contains the source code of the application. It contains the folders "main", which contains that source code of the application, and "test", which contains the source code of the unit tests.
+
+testconf
+: contains a work environment for executing some of the tests. It's possible this doesn't belong in the project.
+
+.gitignore
+: contains a list of the folders that git is supposed to ignore, such as configuration that is specific to the user's development environment (such as .vscode) and data generated during executions of the application.
+
+build.sbt
+: configuration for the build tool, SBT.
+
+README.md
+: this documentation file.
+
+run_delays_experiment.sh
+: a script to run the application in an experiment that varies the loopDelay variable. It's possible this should not be added to git.
+
+run_weights_experiment.sh
+: a script to run the application in an experiment that varies the weightPerProspect variable. It's possible this should not be added to git.
+
+run_distributions_experiment.sh
+: a script to run the application in an experiment that varies the distributions. It's possible this should not be added to git.
