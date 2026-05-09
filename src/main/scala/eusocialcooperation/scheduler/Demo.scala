@@ -48,6 +48,7 @@ import org.jfree.chart.JFreeChart
 import org.jfree.chart3d.Chart3D
 import java.io.Closeable
 import scala.util.Using
+import eusocialcooperation.scheduler.archiver.Archiver
 
 /** The main entry point of the application. When this is started, the system is
   * constructed in 2 parts: the UI and the processing thread. The UI is
@@ -115,6 +116,7 @@ object Demo extends JFXApp3 {
     implicit val ec: scala.concurrent.ExecutionContext =
       scala.concurrent.ExecutionContext.global
 
+    // TODO: Probably should refactor the parameter parsing into a single function and pass around all the parameters in a case class or something.
     val experimentPath = this.parameters.unnamed.headOption match {
       // TODO: This is to enable the use of the code lens. It really should be provided either on the command line or as an environment variable.
       // case None => throw new IllegalArgumentException("Experiment path must be provided as the first argument.")
@@ -351,6 +353,11 @@ object Demo extends JFXApp3 {
           } else {
             createAndSaveCharts(points, prospects, queueLengths, outputPath)
           }
+
+          val archiver = Archiver(outputPath)
+          archiver.archivePointsData(points.get().toSeq)
+          archiver.archiveProspectsData(prospects.get().toSeq)
+          archiver.archiveQueueLengthData(queueLengths.get())
         }
       }
 
