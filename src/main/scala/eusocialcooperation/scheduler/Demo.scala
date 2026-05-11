@@ -3,42 +3,19 @@ package eusocialcooperation.scheduler
 import org.apache.pekko.actor.typed.ActorSystem
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
-import java.util.concurrent.atomic.AtomicReferenceArray
+import scala.concurrent.duration.Duration
 import java.util.concurrent.atomic.AtomicReference
 import scala.jdk.DurationConverters._
-//import org.jzy3d.plot3d.primitives.Scatter
-//import org.jzy3d.plot3d.primitives.LineStrip
-//import org.jzy3d.plot3d.rendering.canvas.Quality
-//import org.jzy3d.chart.factories.AbstractDrawableFactory
-//import org.jzy3d.chart.factories.EmulGLChartFactory
-//import org.jzy3d.chart.EmulGLSkin
 import scala.jdk.CollectionConverters._
-import scala.util.Random
 import com.typesafe.config.ConfigFactory
-import org.slf4j.LoggerFactory
-//import org.jzy3d.maths.Coord3d
 import java.io.File
-//import org.jzy3d.maths.Coord2d
 import java.net.URL
 import java.net.URLClassLoader
-//import org.jzy3d.plot3d.rendering.legends.AWTLegend
-//import org.jzy3d.colors.Color
-//import org.jzy3d.plot3d.rendering.legends.colorbars.AWTColorbarLegend
 import org.apache.pekko.util.Timeout
 import org.apache.pekko.actor.typed.Scheduler
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import com.typesafe.config.Config
 import org.slf4j.MDC
-import scalafx.application.JFXApp3
-import scalafx.scene._
-import scalafx._
-import scalafx.scene.control._
-import javafx.fxml.FXMLLoader
-import scalafx.scene.Parent
-import javafx.{scene => jfxs}
-import javafx.scene.{layout => jfxl}
-import org.apache.pekko.Main
-import scalafx.scene.layout.GridPane
 import scala.concurrent.Future
 import eusocialcooperation.scheduler.charter.JFreeCharter
 import org.jfree.chart3d.`export`.ExportUtils
@@ -46,7 +23,6 @@ import org.jfree.chart.ChartUtils
 import scalafx.application.Platform
 import org.jfree.chart.JFreeChart
 import org.jfree.chart3d.Chart3D
-import java.io.Closeable
 import scala.util.Using
 import eusocialcooperation.scheduler.archiver.Archiver
 
@@ -61,24 +37,48 @@ import eusocialcooperation.scheduler.archiver.Archiver
   * the running of multiple experiments serially.
   *
   * All data, including the logs, are placed in the experiment path which is
-  * provided on the command line. The format of the command line is: `Demo
-  * <experimentPath> [--headless=(true|false)]
+  * provided on the command line. The format of the command line is:
+  * `Demo <experimentPath> [--headless=true|false] [--runs=N] [--parent=path]`
   *
-  * This isn't a terribly well-written program; I haven't tested the placement
-  * of the --headless parameter, so it really should be specified in exactly
-  * this order, and I didn't spend a lot of time to figure out how to simply say
-  * "--headless" and have that be interpreted as "true".
-  *
-  * Additionally, I haven't figured out how to get the UI to expand when the
-  * chart is added. It will properly reform when you switch tabs and switch
-  * back, but that's to come.
+  * When running with a GUI, the JavaFX application is launched via [[GUIApp]],
+  * which retrieves the parsed parameters and configuration from this singleton.
+  * In headless mode the experiment runs directly without launching a GUI.
   */
-object Demo extends JFXApp3 {
+object Demo extends LoggingComponent {
+
+  /** Parsed command-line parameters.
+    *
+    * @param experimentPath
+    *   The path to the experiment directory.
+    * @param runs
+    *   The number of runs to execute.
+    * @param headless
+    *   Whether to run in headless mode (no GUI).
+    * @param parentPath
+    *   The optional parent experiment path for configuration fallback.
+    */
+  case class CommandLineParams(
+      experimentPath: String,
+      runs: Int,
+      headless: Boolean,
+      parentPath: Option[String]
+  )
 
   private[scheduler] val durationConfigKey = "duration"
   private[scheduler] val mdcKey = "experiment"
   private[scheduler] val headlessModeFxmlFileName = "/headless-mode.fxml"
   val mainLayoutFxmlFileName = "/main-layout.fxml"
+
+  /** Shared state read by [[GUIApp]] after [[main]] has populated it. */
+  @volatile private[scheduler] var commandLineParams: CommandLineParams = _
+  @volatile private[scheduler] var config: Config = _
+
+  /** Holds a reference to the currently running actor system so that
+    * [[GUIApp.stop]] can cancel it when the window closes.
+    */
+  private[scheduler] val currentActorSystem
+      : AtomicReference[Option[ActorSystem[Dispatcher.Command]]] =
+    new AtomicReference(None)
 
   def parseRunsParam(namedParameters: Map[String, String]): Int = {
     namedParameters.get("runs") match {
@@ -112,27 +112,44 @@ object Demo extends JFXApp3 {
   def effectiveHeadless(requestedHeadless: Boolean, runs: Int): Boolean =
     requestedHeadless || runs > 1
 
-  override def start(): Unit = {
-    implicit val ec: scala.concurrent.ExecutionContext =
-      scala.concurrent.ExecutionContext.global
+  def fxmlFileName(headless: Boolean): String =
+    if (headless) headlessModeFxmlFileName else mainLayoutFxmlFileName
 
-    // TODO: Probably should refactor the parameter parsing into a single function and pass around all the parameters in a case class or something.
-    val experimentPath = this.parameters.unnamed.headOption match {
-      // TODO: This is to enable the use of the code lens. It really should be provided either on the command line or as an environment variable.
-      // case None => throw new IllegalArgumentException("Experiment path must be provided as the first argument.")
-      case None                         => "testconf/"
+  /** Parses raw command-line arguments into a [[CommandLineParams]] instance.
+    *
+    * Named arguments use the format `--key=value`; a bare flag `--key` is
+    * treated as `--key=true`. The first positional argument is the experiment
+    * path; if omitted, `"testconf/"` is used as a default.
+    *
+    * @param args
+    *   Raw command-line arguments.
+    * @return
+    *   Parsed [[CommandLineParams]].
+    */
+  def parseCommandLineParams(args: Array[String]): CommandLineParams = {
+    val (namedArgs, unnamedArgs) = args.partition(_.startsWith("--"))
+    val namedParameters: Map[String, String] = namedArgs.map { arg =>
+      arg.stripPrefix("--").split("=", 2) match {
+        case Array(k, v) => k -> v
+        case Array(k)    => k -> "true"
+      }
+    }.toMap
+
+    val experimentPath = unnamedArgs.headOption match {
+      case None => "testconf/"
       case Some(path) if path.isEmpty() =>
         throw new IllegalArgumentException("Experiment path must be non-empty.")
       case Some(path) if !path.endsWith("/") => path + "/"
       case Some(path)                        => path
     } match {
       case path if !File(path).exists() =>
-        throw new IllegalArgumentException(s"Experiment path '$path' does not exist.")
+        throw new IllegalArgumentException(
+          s"Experiment path '$path' does not exist."
+        )
       case path => path
     }
-    val namedParameters = this.parameters.named.toMap
-    val runs = parseRunsParam(namedParameters)
 
+    val runs = parseRunsParam(namedParameters)
     val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
     val headless = effectiveHeadless(requestedHeadless, runs)
 
@@ -141,72 +158,97 @@ object Demo extends JFXApp3 {
       case Some(path) if path.isEmpty() =>
         throw new IllegalArgumentException("Parent path must be non-empty.")
       case Some(path) if !path.endsWith("/") => Some(path + "/")
-      case Some(path) => 
-        Some(path)
+      case Some(path)                        => Some(path)
     } match {
       case None => None
       case Some(path) if !File(path).exists() =>
-        throw new IllegalArgumentException(s"Parent path '$path' does not exist.")
-      case Some(path) =>
-        Some(path)
+        throw new IllegalArgumentException(
+          s"Parent path '$path' does not exist."
+        )
+      case Some(path) => Some(path)
     }
 
-    // Creates a configuration that lets the logging data be output to the folder where the experiment is being conducted, keeping the run data consolidated together.
-    MDC.put(mdcKey, experimentPath) // This will be used in the logback configuration to determine where to write logs for this experiment.
-    //MDC.put(mdcKey, experimentPath) // This will be used in the logback configuration to determine where to write logs for this experiment.
-    given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
-    val logger =
-      LoggerFactory.getLogger(s"${this.getClass.getPackage.getName}.Demo")
+    CommandLineParams(experimentPath, runs, headless, parentPath)
+  }
 
-    // Puts the <experimentPath>/config folder into the classpath. Would actually prefer not to put the whole folder into the classpath, but that seems to be how it works. I wonder how serious a vulnerability/feature this is, because it opens up putting logback.xml or similar in the config folder which could surreptitiously change the experiment behavior.
-    
+  /** Loads the experiment configuration for the given parameters.
+    *
+    * Puts the `<experimentPath>/config` folder on the classpath to allow
+    * per-experiment `experiment.conf` files to be discovered. When a
+    * `parentPath` is provided its configuration is used as a fallback.
+    *
+    * @param params
+    *   Parsed command-line parameters.
+    * @return
+    *   Loaded [[Config]] scoped to this application's package.
+    */
+  def loadConfig(params: CommandLineParams): Config = {
     val currentLoader = Thread.currentThread().getContextClassLoader
     def getConfigLoader(path: String): URLClassLoader = {
       val configFile = new File(s"${path}$experimentConfigPath")
       val folderUrl: URL = configFile.toURI.toURL
-      val arr: Array[URL] = Array(folderUrl)
-      new URLClassLoader(arr, currentLoader)
+      new URLClassLoader(Array(folderUrl), currentLoader)
     }
+    def getConfigFromPath(path: String) =
+      ConfigFactory.load(getConfigLoader(path), experimentConfigurationFileName)
 
-    def getConfigFromPath(path: String) = ConfigFactory.load(getConfigLoader(path), experimentConfigurationFileName)
+    params.parentPath
+      .fold(getConfigFromPath(params.experimentPath)) { parent =>
+        getConfigFromPath(params.experimentPath)
+          .withFallback(getConfigFromPath(parent))
+      }
+      .getConfig(Demo.getClass.getPackage.getName)
+  }
 
-    given config: Config = parentPath.fold(getConfigFromPath(experimentPath)) { parent =>
-        getConfigFromPath(experimentPath).withFallback(getConfigFromPath(parent))
-    }.getConfig(this.getClass().getPackage().getName())
+  /** Cancels the currently running actor system, if any, by terminating it. */
+  def cancelCurrentExperiment(): Unit = {
+    currentActorSystem.get().foreach { system =>
+      if (!system.whenTerminated.isCompleted) {
+        system.terminate()
+      }
+    }
+  }
 
-    // Loads the duration to run the experiment from the configuration.
+  /** Runs the experiment asynchronously.
+    *
+    * Creates the Pekko actor system for each run, samples queue lengths,
+    * generates charts, and archives data. When running with a GUI the
+    * `controller` is updated with the generated charts via
+    * `Platform.runLater`.
+    *
+    * @param params
+    *   Parsed command-line parameters.
+    * @param appConfig
+    *   Loaded experiment configuration.
+    * @param controller
+    *   Optional UI controller to receive generated charts (non-headless only).
+    * @param ec
+    *   Implicit execution context used to schedule the Future.
+    * @return
+    *   A [[Future]] that completes when all runs have finished.
+    */
+  def runExperiment(
+      params: CommandLineParams,
+      appConfig: Config,
+      controller: Option[MainLayoutController]
+  )(implicit ec: scala.concurrent.ExecutionContext): Future[Unit] = {
+    given Config = appConfig
+
+    MDC.put(mdcKey, params.experimentPath)
+    given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
+
     val durationMs = {
-      config.getDuration(durationConfigKey) match {
+      appConfig.getDuration(durationConfigKey) match {
         case ms if ms.toMillis > 0 => ms.toScala
-        case ms                    =>
+        case ms =>
           throw new IllegalArgumentException(
             s"${durationConfigKey} must be positive, but got $ms"
           )
       }
     }
-    // logger.debug("Starting demo with duration: {}", durationMs)
 
-    // Initializes the UI. I have a strong preference for FXML files rather than programmatic UI; I wish JavaFX was as good as Adobe Flex was.
-    val fxmlUrl = this.getClass().getResource(fxmlFileName(headless))
-    val loader = new FXMLLoader(fxmlUrl)
-    loader.load()
-    var controller = None: Option[MainLayoutController]
-    if (!headless) {
-      logger.info("UI initialized, starting processing thread.")
-      val controller = Some(loader.getController[MainLayoutController]())
-      controller.get.experimentPathProperty() = experimentPath
-    }
-    stage = new JFXApp3.PrimaryStage {
-      val root = loader.getRoot[jfxl.GridPane]()
-      scene = new Scene(new GridPane(root))
-      title = "Eusocial Cooperation Scheduler Demo"
-    }
-
-    // Start the processing thread. Can't be launched in the thread running "start" or it will block the launching of the window.
-    // TODO: Somehow this is a load-bearing log call? Why does this thread not start unless this logging statement is here? I don't think it's just that the logs aren't writing properly; the data never shows up in UI.
-    //logger.trace("Is this starting or what?")
     Future {
-      MDC.put(mdcKey, experimentPath)
+      MDC.put(mdcKey, params.experimentPath)
 
       def createAndSaveCharts(
           points: AtomicReference[Set[DataPoint[Sample]]],
@@ -230,7 +272,10 @@ object Demo extends JFXApp3 {
             600,
             new java.io.File(s"${outputPath}main-chart.png")
           )
-          logger.info("Main chart created at {}", s"${outputPath}main-chart.png")
+          logger.info(
+            "Main chart created at {}",
+            s"${outputPath}main-chart.png"
+          )
           ChartUtils.saveChartAsPNG(
             new java.io.File(s"${outputPath}points2D.png"),
             points2DChart,
@@ -259,7 +304,8 @@ object Demo extends JFXApp3 {
       }
 
       def runSingleExperiment(runNumber: Int): Unit = {
-        val outputPath = runOutputPath(experimentPath, runNumber, runs)
+        val outputPath =
+          runOutputPath(params.experimentPath, runNumber, params.runs)
         new java.io.File(outputPath).mkdirs()
         new java.io.File(s"${outputPath}logs").mkdirs()
         // TODO: This is side-effect-ful. It correctly sets the MDC for the current thread, but it clears out the prior value.
@@ -270,7 +316,10 @@ object Demo extends JFXApp3 {
           val points = AtomicReference(Set.empty[DataPoint[Sample]])
           val prospects = AtomicReference(Set.empty[DataPoint[Point]])
 
-          logger.trace("Creating dispatcher actor system for run {}.", runNumber)
+          logger.trace(
+            "Creating dispatcher actor system for run {}.",
+            runNumber
+          )
 
           val dispatcher = try {
             ActorSystem(
@@ -285,6 +334,7 @@ object Demo extends JFXApp3 {
               )
               throw e
           }
+          currentActorSystem.set(Some(dispatcher))
           logger.trace("Got dispatcher reference")
 
           logger.trace("Started queue sampler")
@@ -306,16 +356,14 @@ object Demo extends JFXApp3 {
           }
           logger.trace("Started queue sampler")
 
-          val scheduledTask = dispatcher.scheduler.scheduleOnce(
+          dispatcher.scheduler.scheduleOnce(
             durationMs,
             () => {
-              // Send a stop message so it can stop things better.
               given Timeout = 5.seconds
               given Scheduler = dispatcher.scheduler
               queueSampler.cancel()
               Await.result(
-                dispatcher
-                  .ask(Dispatcher.Stop(_)),
+                dispatcher.ask(Dispatcher.Stop(_)),
                 5.seconds
               )
               dispatcher.terminate()
@@ -330,11 +378,12 @@ object Demo extends JFXApp3 {
                 e.getMessage
               )
           }
+          currentActorSystem.set(None)
 
           logger.trace("Processing thread finished for run {}.", runNumber)
 
           // Not sure why, but the chart creation works fine outside the Platform thread, but if then try to add those charts to the UI, it doesn't work.
-          if (!headless) {
+          if (!params.headless) {
             Platform.runLater(() => {
               val (
                 pointsChart,
@@ -342,13 +391,13 @@ object Demo extends JFXApp3 {
                 clusterAnalysisChart,
                 lengthSamplesChart
               ) = createAndSaveCharts(points, prospects, queueLengths, outputPath)
-              controller.map(controller => {
-                controller.pointsChartProperty() = Option(pointsChart)
-                controller.points2DChartProperty() = Option(points2DChart)
-                controller.clusterAnalysisChartProperty() =
+              controller.foreach { ctrl =>
+                ctrl.pointsChartProperty() = Option(pointsChart)
+                ctrl.points2DChartProperty() = Option(points2DChart)
+                ctrl.clusterAnalysisChartProperty() =
                   Option(clusterAnalysisChart)
-                controller.lengthSamplesChartProperty() = Option(lengthSamplesChart)
-              })
+                ctrl.lengthSamplesChartProperty() = Option(lengthSamplesChart)
+              }
             })
           } else {
             createAndSaveCharts(points, prospects, queueLengths, outputPath)
@@ -361,12 +410,8 @@ object Demo extends JFXApp3 {
         }
       }
 
-      (1 to runs).foreach(runSingleExperiment)
-      MDC.put(mdcKey, experimentPath) 
-
-      if (headless) {
-        Platform.exit()
-      }
+      (1 to params.runs).foreach(runSingleExperiment)
+      MDC.put(mdcKey, params.experimentPath)
     }.andThen {
       case scala.util.Success(_) =>
         logger.info("All runs completed successfully.")
@@ -375,8 +420,31 @@ object Demo extends JFXApp3 {
     }
   }
 
-  def fxmlFileName(headless: Boolean): String =
-    if (headless) headlessModeFxmlFileName else mainLayoutFxmlFileName
+  /** The main entry point of the application.
+    *
+    * Parses command-line arguments, loads configuration, stores them in the
+    * singleton for [[GUIApp]] to consume, then either launches the JavaFX GUI
+    * (non-headless) or runs the experiment directly (headless).
+    *
+    * @param args
+    *   Command-line arguments:
+    *   `[experimentPath] [--headless=true|false] [--runs=N] [--parent=path]`
+    */
+  def main(args: Array[String]): Unit = {
+    val params = parseCommandLineParams(args)
+    commandLineParams = params
+    config = loadConfig(params)
+    MDC.put(mdcKey, params.experimentPath)
+
+    if (!params.headless) {
+      javafx.application.Platform.setImplicitExit(true)
+      javafx.application.Application.launch(classOf[GUIApp], args: _*)
+    } else {
+      implicit val ec: scala.concurrent.ExecutionContext =
+        scala.concurrent.ExecutionContext.global
+      Await.result(runExperiment(params, config, None), Duration.Inf)
+    }
+  }
 }
 // TODO list:
 // 1. With a low exploration radius and a low weight per prospect, I would have thought the low areas would be well-explored, but it seems not. I would have thought there would be more low-threshold points when submitting the prospects, so the number of exploiters would be high. Which it may be; that would show up as duplicates, not density. I would have to re-introduce some randomness around the prospect to do that.
