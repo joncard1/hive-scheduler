@@ -197,7 +197,7 @@ object Demo extends LoggingComponent {
         getConfigFromPath(params.experimentPath)
           .withFallback(getConfigFromPath(parent))
       }
-      .getConfig(Demo.getClass.getPackage.getName)
+      .getConfig(this.getClass.getPackage.getName)
   }
 
   /** Cancels the currently running actor system, if any, by terminating it. */

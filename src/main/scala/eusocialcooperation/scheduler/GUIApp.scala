@@ -61,7 +61,8 @@ class GUIApp extends Application with LoggingComponent {
     sfxStage.title = "Eusocial Cooperation Scheduler Demo"
     sfxStage.show()
 
-    // Start the processing thread. Can't be launched in the thread running "start" or it will block the launching of the window.
+    // Launches the experiment on a background Future; cannot run on this JavaFX
+    // application thread or it would block the window from appearing.
     Demo.runExperiment(params, appConfig, controller)
   }
 
