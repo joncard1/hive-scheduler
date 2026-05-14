@@ -161,22 +161,30 @@ object Demo extends LoggingComponent {
       case Some(path) if path.isEmpty() =>
         throw new IllegalArgumentException("Experiments path must be non-empty.")
       case Some(path) if !path.endsWith("/") => Some(path + "/")
-      case Some(path)                        => Some(path)
-    } /*match {
+      case x @ Some(path)                        => x
+    } match {
       case None => None
-      case Some(path) if !File(path).exists() =>
-        throw new IllegalArgumentException(
-          s"Experiments path '$path' does not exist."
-        )
-      case Some(path) =>
-        val subdirs = File(path).listFiles().filter(_.isDirectory).map(_.getName)
-        if (subdirs.isEmpty) {
-          throw new IllegalArgumentException(
-            s"Experiments path '$path' must contain at least one subdirectory."
-          )
-        }
-        Some(path)
-    }*/
+      case x @ Some(path) =>
+         val experimentsDir = File(path)
+         if !experimentsDir.exists() then
+           throw new IllegalArgumentException(
+             s"Experiments path '$path' does not exist."
+           )
+         if !experimentsDir.isDirectory() then
+           throw new IllegalArgumentException(
+             s"Experiments path '$path' must be a directory."
+           )
+         val subdirs =
+           Option(experimentsDir.listFiles())
+             .getOrElse(Array.empty[File])
+             .filter(_.isDirectory)
+             .map(_.getName)
+         if subdirs.isEmpty then
+           throw new IllegalArgumentException(
+             s"Experiments path '$path' must contain at least one subdirectory representing an experiment."
+           )
+        x
+    }
 
     if experimentPath.isEmpty && experimentsPath.isEmpty then
       throw new IllegalArgumentException(
@@ -269,7 +277,7 @@ object Demo extends LoggingComponent {
   )(implicit ec: scala.concurrent.ExecutionContext): Future[Unit] = {
     given Config = appConfig
 
-    // TODO this assumes that the experimentPath is always set, which should be enforced by now. Should be checked.
+    require(params.experimentPath.isDefined, "The method runExperiment requires an experimentPath be set. If one was not provided by the command-line, a copy of CommandLineParams with the path set should have been provided by the caller.")
     // TODO: The outputPath may not be necessarily be based on experiment path.
     MDC.put(mdcKey, params.experimentPath.get)
     given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
@@ -484,7 +492,8 @@ object Demo extends LoggingComponent {
       implicit val ec: scala.concurrent.ExecutionContext =
         scala.concurrent.ExecutionContext.global
 
-      if params.experimentPath.isEmpty then
+      // This effectively makes --experimentsPath greater precedent than experimentPath, but prohibiting setting both should have been enforced by this point.
+      if params.experimentsPath.isDefined then
         val experimentsFolder = new File(params.experimentsPath.get)
         experimentsFolder.listFiles().filter(_.isDirectory).filter(f => (f.getName != "config") && (f.getName != "logs")).sortBy(_.getName).foreach { experimentDir =>
           println(s"Running experiment in folder ${experimentDir.getName}")
@@ -492,8 +501,12 @@ object Demo extends LoggingComponent {
           val experimentConfig = loadConfig(experimentParams)
           Await.result(runExperiment(experimentParams, experimentConfig, None), Duration.Inf)
         }
-      else {      
+      else if params.experimentPath.isDefined then {      
         Await.result(runExperiment(params, config, None), Duration.Inf)
+      } else {
+        throw new IllegalArgumentException(
+          "Either experimentPath or experimentsPath must be provided. This should have been enforced by this point; check the command-line arguments parsing logic."
+        )
       }
     }
   }

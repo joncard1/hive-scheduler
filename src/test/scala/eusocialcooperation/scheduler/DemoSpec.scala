@@ -49,7 +49,7 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
     Demo.effectiveHeadless(requestedHeadless = false, runs = 2, Some("value")) shouldEqual true
   }
 
-  test("effectiveHeadless defaults to true when --experimentsPath is not set") {
+  test("effectiveHeadless defaults to true when --experimentPath is not set (assumes experimentsPath was set)") {
     Demo.effectiveHeadless(requestedHeadless = false, runs = 1, None) shouldEqual true
   }
 

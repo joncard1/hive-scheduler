@@ -49,6 +49,7 @@ class GUIApp extends Application with LoggingComponent {
     val controller: Option[MainLayoutController] = if (!params.headless) {
       logger.info("UI initialized, starting processing thread.")
       val ctrl = loader.getController[MainLayoutController]()
+      require(params.experimentPath.isDefined, "A single experiment path must be defined to use the UI.")
       ctrl.experimentPathProperty() = params.experimentPath.get
       Some(ctrl)
     } else {
