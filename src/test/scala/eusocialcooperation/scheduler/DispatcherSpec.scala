@@ -14,6 +14,7 @@ import com.typesafe.config.ConfigFactory
 import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.Scheduler
 import scala.util.Success
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 /** Tests for the Dispatcher actor.
   *

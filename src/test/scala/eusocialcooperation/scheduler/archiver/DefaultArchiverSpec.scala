@@ -5,6 +5,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalamock.scalatest.MockFactory
 import java.io.StringWriter
 import eusocialcooperation.scheduler._
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 class DefaultArchiverSpec extends AnyFunSuite with Matchers with MockFactory {
   test("DefaultArchiver can be instantiated with a path") {

@@ -1,4 +1,4 @@
-package eusocialcooperation.scheduler
+package eusocialcooperation.scheduler.datapoint
 
 import org.apache.pekko.actor.typed.ActorRef
 import org.apache.pekko.actor.typed.scaladsl.AskPattern._
@@ -13,6 +13,8 @@ import scala.concurrent.duration.Duration
   * the monad.
   */
 object DataPoint {
+
+  type DataPointBind[A] = (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
 
   /** An enum to designate the phases in which a DataPoint can be generated.
     */
@@ -56,22 +58,19 @@ object DataPoint {
     *   The DataPoint containing the value, with the metadata provided by the
     *   implicit parameters and the actor message.
     */
-  def apply[A](value: A)(implicit
-      dpa: ActorRef[DataPointActor.Create[A]],
-      scheduler: Scheduler,
-      phase: Phase,
-      parent: Option[DataPoint[?]] = None
-  ): DataPoint[A] = {
-    implicit val timeout: Timeout = Timeout(3.seconds)
-    val worker: String = Thread.currentThread().getName
+  def getActorDataPointBind[A](dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPointBind[A] = {
+    (value) => (phase, actorName, parent) ?=> {
+      implicit val timeout: Timeout = Timeout(3.seconds)
+      //val worker: String = Thread.currentThread().getName
 
-    // Using Inf because the pekko ask function takes a timeout, and it's specified above.
-    Await.result(
-      dpa.ask[DataPoint[A]](replyTo =>
-        DataPointActor.Create(value, phase, worker, replyTo, parent)
-      ),
-      Duration.Inf
-    )
+      // Using Inf because the pekko ask function takes a timeout, and it's specified above.
+      Await.result(
+        dpa.ask[DataPoint[A]](replyTo =>
+          DataPointActor.Create(value, phase, actorName, replyTo, parent)
+        )(using scheduler = scheduler),
+        Duration.Inf
+      )
+    }
   }
 }
 
@@ -111,6 +110,13 @@ class DataPoint[A](
 ) {
   def flatMap[B](f: A => DataPoint[B]): DataPoint[B] = {
     f(value)
+  }
+
+  def map[B](f: A => B)(implicit dpb: DataPoint.DataPointBind[B], phase: DataPoint.Phase, actorName: String): DataPoint[B] = {
+    given Option[DataPoint[?]] = Some(this)
+    dpb(
+      f(value)
+    )
   }
 
   // TODO: I didn't implement map because it wasn't clear whether the "correct" solution was to generate a new DataPoint or to use the metadata of the original DataPoint, or to generate new DataPoint and use the original DataPoint as the parent, etc. Since it never came up, it never got implemented. (It was never necessary to generate a List[Sample] from List[Point] of prospects, for example. Simply having one prospect didn't really require using map, but the need to track precedence came later and perhaps that use case suggests the proper implementation of map).

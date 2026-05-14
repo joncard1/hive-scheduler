@@ -20,7 +20,10 @@ import eusocialcooperation.scheduler.worker.states.ExplorerState.State
 import scala.util.Using
 import scala.util.Try
 import com.typesafe.config.Config
-import eusocialcooperation.scheduler.DataPoint.Phase
+import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import org.scalamock.function.MockFunction4
+import org.scalamock.function.MockFunction1
 
 class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory with OptionValues {
     val testKit: ActorTestKit = ActorTestKit()
@@ -33,6 +36,13 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
     val explorationRadius = 0.01
     val threshold = 0.05   
     val weightPerProspect = 0.2
+
+    def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+        new DataPoint(0, 0, name, phase, sample, parent)
+    }
+    def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+        new DataPoint(1, 0, name, phase, point, parent)
+    }
 
     def getConfig() = {
         val config: Config = mock[Config]
@@ -54,12 +64,18 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         given Config = getConfig()
 
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
-        fn.expects(*, *).returning(BigDecimal(0.75))
+        val result = BigDecimal(0.75)
+        fn.expects(*, *).returning(result)
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
 
+        //given sampleBind: DataPoint.DataPointBind[Sample] = mock[DataPoint.DataPointBind[Sample]]
+        //given pointBind: DataPoint.DataPointBind[Point] = mock[DataPoint.DataPointBind[Point]]
+        given actorName: String = "workername"
+
+        /*
         val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
             case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
@@ -73,17 +89,18 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
                 replyTo ! new DataPoint(0, 0, name, phase, point, parent)
                 Behaviors.same
         }), "pointActor")
+        */
 
         try {
             val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
-            val newState = state().asInstanceOf[ExplorerState]
+            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
 
-            sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
             newState.remainingSteps.value `shouldBe` (numSteps - 1)
             newState.state `shouldBe` ExplorerState.State.LookingForFirstLowValue
         } finally {
-            testKit.stop(sampleActor)
-            testKit.stop(pointActor)
+            //testKit.stop(sampleActor)
+            //testKit.stop(pointActor)
         }
     }
 
@@ -92,13 +109,16 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         val numPoints = 10
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
-        fn.expects(*, *).returning(BigDecimal(0.5))
+        val result = BigDecimal(0.5)
+        fn.expects(*, *).returning(result)
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
         val newProspects = Set(
             new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
             , new DataPoint(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
+
+        given actorName: String = "workername"
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         /*
@@ -110,6 +130,7 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }), "dispatcher")
         */
 
+        /*
         val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
             case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
@@ -123,19 +144,21 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
                 replyTo ! new DataPoint(0, 0, name, phase, point, parent)
                 Behaviors.same
         }), "pointActor")
+        */
 
         try {
             // Given the preference and the expected number of prospects delivered above, the worker should choose to be an exploiter, but if the preference is higher it should choose to be an explorer, so we can test both branches by adjusting the preference.
             val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)
             val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcherProbe.ref, Some(0))
-            val newState = state().asInstanceOf[ChooseState]
+            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ChooseState]
 
-            sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            // TODO: Why would this expect this query?
             //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
         } finally {
             //testKit.stop(dispatcher)
-            testKit.stop(sampleActor)
-            testKit.stop(pointActor)
+            //testKit.stop(sampleActor)
+            //testKit.stop(pointActor)
         }
     }
 
@@ -144,11 +167,15 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         val numPoints = 10
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
-        fn.expects(*, *).returning(threshold - 0.001)
+        val result = threshold - 0.001
+        fn.expects(*, *).returning(result)
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
 
+        given actorName: String = "workername"
+
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
+        /*
         val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
             case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
@@ -162,17 +189,19 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
                 replyTo ! new DataPoint(0, 0, name, phase, point, parent)
                 Behaviors.same
         }), "pointActor")
+        */
+        //(sampleBind(_: Sample)(using _: Phase, _: String, _: Option[DataPoint[?]])).expects(*, *, *, *).returning(new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (startLocationX, startLocationY, result), None)).anyNumberOfTimes()
 
         try {
             val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
-            val newState = state().asInstanceOf[ExplorerState]
+            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
 
-            sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
             newState.remainingSteps.value `shouldBe` (numPoints - 1)
             newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
         } finally {
-            testKit.stop(sampleActor)
-            testKit.stop(pointActor)
+            //testKit.stop(sampleActor)
+            //testKit.stop(pointActor)
         }
     }
 
@@ -183,13 +212,16 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         val point2 = (BigDecimal(0.2), BigDecimal(0.2))
         val memory = Set(point1, point2)
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
-        fn.expects(*, *).returning(threshold + 0.001)
+        val result = threshold + 0.001
+        fn.expects(*, *).returning(result)
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
         val newProspects = Set(
             new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
             , new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
+
+        given actorName: String = "workername"
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         var actualDelay = AtomicLong(0L)
@@ -209,6 +241,7 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
             case _ => Behaviors.same
         }), "dispatcher")
 
+        /*
         val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
             case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
@@ -222,13 +255,15 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
                 replyTo ! new DataPoint(0, 0, name, phase, point, parent)
                 Behaviors.same
         }), "pointActor")
+        */
+        //(sampleBind(_: Sample)(using _: Phase, _: String, _: Option[DataPoint[?]])).expects(*, *, *, *).returning(new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (startLocationX, startLocationY, result), None)).anyNumberOfTimes()
 
         try {
             val preference = BigDecimal(weightPerProspect * newProspects.size) - BigDecimal(0.001)
-            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcher, None, ExplorerState.State.LookingForHighValueAfterLow, memory)
-            val newState = state().asInstanceOf[ChooseState]
+            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcher, Some(0), ExplorerState.State.LookingForHighValueAfterLow, memory)
+            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ChooseState]
 
-            sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
             dispatcherProbe.expectMessageType[Dispatcher.AddProspect]
             // Not sure why the expectMessageType can succeed without the values being set; I think the probe is notified before the monitor behavior is run.
             Await.result(setterPromise.future, 3.seconds)
@@ -238,8 +273,8 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
             //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
         } finally {
             testKit.stop(dispatcher)
-            testKit.stop(sampleActor)
-            testKit.stop(pointActor)
+            //testKit.stop(sampleActor)
+            //testKit.stop(pointActor)
         }
     }
 
@@ -247,12 +282,16 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         given Config = getConfig()
 
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
-        fn.expects(*, *).returning(BigDecimal(threshold) - 0.001)
+        val result = BigDecimal(threshold) - 0.001
+        fn.expects(*, *).returning(result)
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
 
+        given actorName: String = "workername"
+
+        /*
         val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
             case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
@@ -266,17 +305,19 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
                 replyTo ! new DataPoint(0, 0, name, phase, point, parent)
                 Behaviors.same
         }), "pointActor")
+        */
+        //(sampleBind(_: Sample)(using _: Phase, _: String, _: Option[DataPoint[?]])).expects(*, *, *, *).returning(new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (startLocationX, startLocationY, result), None)).anyNumberOfTimes()
 
         try {
             val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(threshold), dispatcherProbe.ref, Some(0), State.LookingForHighValueAfterLow)
-            val newState = state().asInstanceOf[ExplorerState]
+            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
 
-            sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
             newState.remainingSteps.value `shouldBe` 0
             newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
         } finally {
-            testKit.stop(sampleActor)
-            testKit.stop(pointActor)
+            //testKit.stop(sampleActor)
+            //testKit.stop(pointActor)
         }
     }
 

@@ -1,4 +1,4 @@
-package eusocialcooperation.scheduler
+package eusocialcooperation.scheduler.datapoint
 
 import org.apache.pekko.actor.typed.{ActorRef, Behavior}
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
@@ -6,6 +6,7 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist
 import org.apache.pekko.actor.typed.receptionist.ServiceKey
 import scala.reflect.ClassTag
 import org.apache.pekko.actor.typed.scaladsl.ActorContext
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 /** The definition of the actor used to generate DataPoints. Some mechanism was
   * required to serialize the creation across many threads in order to provide a

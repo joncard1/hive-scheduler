@@ -25,6 +25,7 @@ import org.jfree.chart.JFreeChart
 import org.jfree.chart3d.Chart3D
 import scala.util.Using
 import eusocialcooperation.scheduler.archiver.Archiver
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 /** The main entry point of the application. When this is started, the system is
   * constructed in 2 parts: the UI and the processing thread. The UI is

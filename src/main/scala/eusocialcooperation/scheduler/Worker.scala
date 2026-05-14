@@ -14,7 +14,7 @@ import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import org.apache.pekko.Done
 import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
-import eusocialcooperation.scheduler.DataPointActor.DataPointActorKey
+import eusocialcooperation.scheduler.datapoint.DataPointActor.DataPointActorKey
 import eusocialcooperation.scheduler.worker.states.{ExplorerState, WorkerState}
 import com.typesafe.config.Config
 import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
@@ -26,6 +26,8 @@ import scala.util.Failure
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import scala.util.Try
+import eusocialcooperation.scheduler.datapoint.DataPointActor
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 /** Actor that controls the worker threads.
   */
@@ -160,7 +162,7 @@ object Worker {
       ActorRef[Dispatcher.Command],
       BigDecimal,
       AtomicBoolean
-  ) => (config: Config, context: ActorContext[Command], dpaSample: ActorRef[DataPointActor.Create[Sample]], dpaPoint: ActorRef[DataPointActor.Create[Point]], mdc: Map[String, String]) ?=> Future[Unit]
+  ) => (config: Config, context: ActorContext[Command], dpaSample: DataPoint.DataPointBind[Sample], dpaPoint: DataPoint.DataPointBind[Point], mdc: Map[String, String]) ?=> Future[Unit]
 
   // TODO: Not sure I like doing this with Future instead of Thread. It's probably more efficient, generally, but I think it's confusing the traceability of the workers. I suspect I'd have to add another environment parameter for the worker name, because the Futures are being run on the same threads.
   def defaultWorkerThreadFactory(
@@ -171,8 +173,8 @@ object Worker {
   )(implicit
       config: Config,
       context: ActorContext[Command],
-      sampleActor: ActorRef[DataPointActor.Create[Sample]],
-      pointActor: ActorRef[DataPointActor.Create[Point]],
+      sampleBind: DataPoint.DataPointBind[Sample],
+      pointBind: DataPoint.DataPointBind[Point],
       mdc: Map[String, String]
   ) = {
     import context.executionContext
@@ -192,15 +194,15 @@ object Worker {
           dispatcher
         )
         while (running.get()) {
-          implicit val dpSampleActor: ActorRef[DataPointActor.Create[Sample]] =
-            sampleActor
-          implicit val dpPointActor: ActorRef[DataPointActor.Create[Point]] =
-            pointActor
+          implicit val dpSampleActor: DataPoint.DataPointBind[Sample] = sampleBind
+          implicit val dpPointActor: DataPoint.DataPointBind[Point] = pointBind
+          implicit val actorName: String = context.self.path.name
           phase = phase()
         }
       } catch {
         case e: Exception =>
-          logger.error(s"worker ${context.self.path.name} encountered error in worker thread: ${e}")
+          logger.error(s"worker ${context.self.path.name} encountered error in worker thread", e)
+          throw e
       }
     }
   }
@@ -232,8 +234,8 @@ object Worker {
       kernelFn: KernelFn,
       dispatcher: ActorRef[Dispatcher.Command],
       workerThreadFactory: WorkerThreadFactory,
-      sampleActor: Option[ActorRef[DataPointActor.Create[Sample]]] = None,
-      pointActor: Option[ActorRef[DataPointActor.Create[Point]]] = None
+      sampleActor: Option[DataPoint.DataPointBind[Sample]] = None,
+      pointActor: Option[DataPoint.DataPointBind[Point]] = None
   )(implicit
       context: ActorContext[Command],
       config: Config,
@@ -246,14 +248,14 @@ object Worker {
         def createNextState(
             kernelFn: KernelFn,
             dispatcher: ActorRef[Dispatcher.Command],
-            sampleActor: Option[ActorRef[DataPointActor.Create[Sample]]],
-            pointActor: Option[ActorRef[DataPointActor.Create[Point]]]
+            sampleActor: Option[DataPoint.DataPointBind[Sample]],
+            pointActor: Option[DataPoint.DataPointBind[Point]]
         ) = {
           if (sampleActor.isDefined && pointActor.isDefined) {
             given Scheduler = context.system.scheduler
             given ExecutionContext = context.system.executionContext
-            given dpaSample: ActorRef[DataPointActor.Create[Sample]] = sampleActor.get
-            given dpaPoint: ActorRef[DataPointActor.Create[Point]] = pointActor.get
+            given dpaSample: DataPoint.DataPointBind[Sample] = sampleActor.get
+            given dpaPoint: DataPoint.DataPointBind[Point] = pointActor.get
 
             // context.log.info(s"Worker ${context.self.path.name} found DataPointActor and is starting.")
             val running = new AtomicBoolean(true)
@@ -288,9 +290,12 @@ object Worker {
               kernelFn,
               dispatcher,
               Option(
-                actors
-                  .serviceInstances(DataPointActor.DataPointActorKey[Sample])
-                  .head
+                DataPoint.getActorDataPointBind(
+                  actors
+                    .serviceInstances(DataPointActor.DataPointActorKey[Sample])
+                    .head,
+                  context.system.scheduler,
+                )
               ),
               pointActor
             )
@@ -305,9 +310,12 @@ object Worker {
               dispatcher,
               sampleActor,
               Option(
-                actors
-                  .serviceInstances(DataPointActor.DataPointActorKey[Point])
-                  .head
+                DataPoint.getActorDataPointBind(
+                  actors
+                    .serviceInstances(DataPointActor.DataPointActorKey[Point])
+                    .head,
+                  context.system.scheduler,
+                )
               )
             )
           case DPActorListing(actors)
@@ -360,8 +368,8 @@ object Worker {
   private def active(
       running: AtomicBoolean,
       thread: Future[Unit],
-      sampleActorRef: ActorRef[DataPointActor.Create[Sample]],
-      pointActorRef: ActorRef[DataPointActor.Create[Point]]
+      sampleActorRef: DataPoint.DataPointBind[Sample],
+      pointActorRef: DataPoint.DataPointBind[Point]
   )(implicit
       context: ActorContext[Command],
       config: Config
@@ -388,9 +396,12 @@ object Worker {
         active(
           running,
           thread,
-          actors
-            .serviceInstances(DataPointActor.DataPointActorKey[Sample])
-            .head,
+          DataPoint.getActorDataPointBind(
+            actors
+              .serviceInstances(DataPointActor.DataPointActorKey[Sample])
+              .head,
+            context.system.scheduler,
+          ),
           pointActorRef
         )
       case DPActorListing(actors)
@@ -401,7 +412,12 @@ object Worker {
           running,
           thread,
           sampleActorRef,
-          actors.serviceInstances(DataPointActor.DataPointActorKey[Point]).head
+          DataPoint.getActorDataPointBind(
+            actors
+              .serviceInstances(DataPointActor.DataPointActorKey[Point])
+              .head,
+            context.system.scheduler,
+          )
         )
       case _ =>
         Behaviors.same

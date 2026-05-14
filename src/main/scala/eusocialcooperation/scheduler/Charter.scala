@@ -14,6 +14,7 @@ import scala.collection.JavaConverters._
 import scalafx.scene.Node
 import org.jfree.chart3d.Chart3D
 import org.jfree.chart.JFreeChart
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 /** A class that generates charts.
   *

@@ -5,7 +5,7 @@ import org.apache.pekko.actor.typed.ActorRef
 import eusocialcooperation.scheduler.Dispatcher.Command
 import com.typesafe.config.Config
 import eusocialcooperation.scheduler.Dispatcher
-import eusocialcooperation.scheduler.DataPointActor.Create
+import eusocialcooperation.scheduler.datapoint.DataPointActor.Create
 import eusocialcooperation.scheduler.Point
 import eusocialcooperation.scheduler.Sample
 import org.apache.pekko.actor.typed.Scheduler
@@ -15,7 +15,7 @@ import scala.concurrent.Await
 import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
-import eusocialcooperation.scheduler.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPoint
 import scala.concurrent.Future
 
 /** The state in which the worker chooses its next state and also sleeps for the
@@ -47,8 +47,9 @@ final case class ChooseState(
   val weightPerProspect = config.getDouble(Worker.weightPerProspectConfigKey)
 
   override def apply()(using
-      ActorRef[Create[Sample]],
-      ActorRef[Create[Point]],
+      DataPoint.DataPointBind[Sample],
+      DataPoint.DataPointBind[Point],
+      String,
       Scheduler
   ): WorkerState = {
     implicit val ec: scala.concurrent.ExecutionContext =
