@@ -37,13 +37,6 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
     val threshold = 0.05   
     val weightPerProspect = 0.2
 
-    def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
-        new DataPoint(0, 0, name, phase, sample, parent)
-    }
-    def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
-        new DataPoint(1, 0, name, phase, point, parent)
-    }
-
     def getConfig() = {
         val config: Config = mock[Config]
          
@@ -71,37 +64,24 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
 
-        //given sampleBind: DataPoint.DataPointBind[Sample] = mock[DataPoint.DataPointBind[Sample]]
-        //given pointBind: DataPoint.DataPointBind[Point] = mock[DataPoint.DataPointBind[Point]]
         given actorName: String = "workername"
 
-        /*
-        val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
-            case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, sample, parent)
-                Behaviors.same
-        }), "dataPointActor")
-
-        val pointProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Point]] {
-            case DataPointActor.Create(point, phase, name, replyTo, parent) =>            
-                replyTo ! new DataPoint(0, 0, name, phase, point, parent)
-                Behaviors.same
-        }), "pointActor")
-        */
-
-        try {
-            val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
-            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
-
-            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
-            newState.remainingSteps.value `shouldBe` (numSteps - 1)
-            newState.state `shouldBe` ExplorerState.State.LookingForFirstLowValue
-        } finally {
-            //testKit.stop(sampleActor)
-            //testKit.stop(pointActor)
+        val mockSampleBind = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleBind.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
+        def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleBind(actorName, phase, sample, parent)
         }
+        val mockPointBind = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointBind.expects(*, *, *, *).never()
+        def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointBind(actorName, phase, point, parent)
+        }
+
+        val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
+        val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
+
+        newState.remainingSteps.value `shouldBe` (numSteps - 1)
+        newState.state `shouldBe` ExplorerState.State.LookingForFirstLowValue
     }
 
     test("ExplorerState should explore the last point and change to a choose state") {
@@ -121,45 +101,25 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         given actorName: String = "workername"
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
-        /*
-        val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {
-            case Dispatcher.RequestPoints(replyTo) =>
-                replyTo ! Dispatcher.RequestedPoints(newProspects)
-                Behaviors.same
-            case _ => Behaviors.same
-        }), "dispatcher")
-        */
-
-        /*
-        val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
-            case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, sample, parent)
-                Behaviors.same
-        }), "dataPointActor")
-
-        val pointProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Point]] {
-            case DataPointActor.Create(point, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, point, parent)
-                Behaviors.same
-        }), "pointActor")
-        */
-
-        try {
-            // Given the preference and the expected number of prospects delivered above, the worker should choose to be an exploiter, but if the preference is higher it should choose to be an explorer, so we can test both branches by adjusting the preference.
-            val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)
-            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcherProbe.ref, Some(0))
-            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ChooseState]
-
-            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
-            // TODO: Why would this expect this query?
-            //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
-        } finally {
-            //testKit.stop(dispatcher)
-            //testKit.stop(sampleActor)
-            //testKit.stop(pointActor)
+        
+        val mockSampleBind = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleBind.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
+        def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleBind(actorName, phase, sample, parent)
         }
+        val mockPointBind = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointBind.expects(*, *, *, *).never()
+        def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointBind(actorName, phase, point, parent)
+        }
+
+        // Given the preference and the expected number of prospects delivered above, the worker should choose to be an exploiter, but if the preference is higher it should choose to be an explorer, so we can test both branches by adjusting the preference.
+        val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)
+        val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcherProbe.ref, Some(0))
+        val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ChooseState]
+
+        // TODO: Why would this expect this query?
+        //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
     }
 
     test("ExplorerState should explore test 1 point that is a prospect") {
@@ -175,34 +135,23 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         given actorName: String = "workername"
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
-        /*
-        val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
-            case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, sample, parent)
-                Behaviors.same
-        }), "dataPointActor")
 
-        val pointProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Point]] {
-            case DataPointActor.Create(point, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, point, parent)
-                Behaviors.same
-        }), "pointActor")
-        */
-        //(sampleBind(_: Sample)(using _: Phase, _: String, _: Option[DataPoint[?]])).expects(*, *, *, *).returning(new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (startLocationX, startLocationY, result), None)).anyNumberOfTimes()
-
-        try {
-            val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
-            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
-
-            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
-            newState.remainingSteps.value `shouldBe` (numPoints - 1)
-            newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
-        } finally {
-            //testKit.stop(sampleActor)
-            //testKit.stop(pointActor)
+        val mockSampleBind = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleBind.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
+        def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleBind(actorName, phase, sample, parent)
         }
+        val mockPointBind = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointBind.expects(*, *, *, *).never()
+        def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointBind(actorName, phase, point, parent)
+        }
+
+        val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
+        val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
+
+        newState.remainingSteps.value `shouldBe` (numPoints - 1)
+        newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
     }
 
     test("ExplorerState should submit a prospect after finding a high value after a low value and transition to a choose state") {
@@ -241,29 +190,22 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
             case _ => Behaviors.same
         }), "dispatcher")
 
-        /*
-        val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
-            case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, sample, parent)
-                Behaviors.same
-        }), "dataPointActor")
-
-        val pointProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Point]] {
-            case DataPointActor.Create(point, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, point, parent)
-                Behaviors.same
-        }), "pointActor")
-        */
-        //(sampleBind(_: Sample)(using _: Phase, _: String, _: Option[DataPoint[?]])).expects(*, *, *, *).returning(new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (startLocationX, startLocationY, result), None)).anyNumberOfTimes()
+        val mockSampleBind = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleBind.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
+        def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleBind(actorName, phase, sample, parent)
+        }
+        val mockPointBind = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointBind.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, point: Point, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, point, parent))
+        def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointBind(actorName, phase, point, parent)
+        }
 
         try {
             val preference = BigDecimal(weightPerProspect * newProspects.size) - BigDecimal(0.001)
             val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcher, Some(0), ExplorerState.State.LookingForHighValueAfterLow, memory)
             val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ChooseState]
 
-            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
             dispatcherProbe.expectMessageType[Dispatcher.AddProspect]
             // Not sure why the expectMessageType can succeed without the values being set; I think the probe is notified before the monitor behavior is run.
             Await.result(setterPromise.future, 3.seconds)
@@ -273,8 +215,6 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
             //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
         } finally {
             testKit.stop(dispatcher)
-            //testKit.stop(sampleActor)
-            //testKit.stop(pointActor)
         }
     }
 
@@ -291,34 +231,22 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         given actorName: String = "workername"
 
-        /*
-        val sampleProbe = testKit.createTestProbe[DataPointActor.Create[Sample]]()
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.spawn(Behaviors.monitor(sampleProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Sample]] {
-            case DataPointActor.Create(sample, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, sample, parent)
-                Behaviors.same
-        }), "dataPointActor")
-
-        val pointProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointProbe.ref, Behaviors.receiveMessage[DataPointActor.Create[Point]] {
-            case DataPointActor.Create(point, phase, name, replyTo, parent) =>
-                replyTo ! new DataPoint(0, 0, name, phase, point, parent)
-                Behaviors.same
-        }), "pointActor")
-        */
-        //(sampleBind(_: Sample)(using _: Phase, _: String, _: Option[DataPoint[?]])).expects(*, *, *, *).returning(new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (startLocationX, startLocationY, result), None)).anyNumberOfTimes()
-
-        try {
-            val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(threshold), dispatcherProbe.ref, Some(0), State.LookingForHighValueAfterLow)
-            val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
-
-            //sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
-            newState.remainingSteps.value `shouldBe` 0
-            newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
-        } finally {
-            //testKit.stop(sampleActor)
-            //testKit.stop(pointActor)
+        val mockSampleBind = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleBind.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
+        def sampleBind(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleBind(actorName, phase, sample, parent)
         }
+        val mockPointBind = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointBind.expects(*, *, *, *).never()
+        def pointBind(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointBind(actorName, phase, point, parent)
+        }
+
+        val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(threshold), dispatcherProbe.ref, Some(0), State.LookingForHighValueAfterLow)
+        val newState = state()(using sampleBind = sampleBind, pointBind = pointBind).asInstanceOf[ExplorerState]
+
+        newState.remainingSteps.value `shouldBe` 0
+        newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
     }
 
 }

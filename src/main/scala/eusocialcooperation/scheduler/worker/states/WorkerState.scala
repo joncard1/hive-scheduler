@@ -34,10 +34,12 @@ trait WorkerState extends LoggingComponent {
   /** Execute the proper behavior for this state. The state returned is the next
     * state the worker should be in.
     *
-    * @param sampleRef
-    *   The Apache Pekko actor used to create Sample data points.
-    * @param pointRef
-    *   The Apache Pekko actor used to create Point data points.
+    * @param sampleBind 
+    *   A function to act as the bind operation for DataPoint[Sample].
+    * @param pointBind
+    *   A function to act as the bind operation for DataPoint[Point].
+    * @param actorName
+    *   The name of the thread, actor, of other key to identify which worker created the a DataPoint.
     * @param scheduler
     *   The Apache Pekko scheduler used to schedule messages to be sent in the
     *   future.
