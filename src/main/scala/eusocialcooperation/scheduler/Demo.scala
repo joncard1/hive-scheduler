@@ -125,7 +125,7 @@ object Demo extends LoggingComponent {
     *
     * Named arguments use the format `--key=value`; a bare flag `--key` is
     * treated as `--key=true`. The first positional argument is the experiment
-    * path; if omitted, `"testconf/"` is used as a default.
+    * path.
     *
     * @param args
     *   Raw command-line arguments.
@@ -156,6 +156,21 @@ object Demo extends LoggingComponent {
       case path => path
     }
 
+    val parentPath = namedParameters.get("parent") match {
+      case None => None
+      case Some(path) if path.isEmpty() =>
+        throw new IllegalArgumentException("Parent path must be non-empty.")
+      case Some(path) if !path.endsWith("/") => Some(path + "/")
+      case Some(path)                        => Some(path)
+    } match {
+      case None => None
+      case Some(path) if !File(path).exists() =>
+        throw new IllegalArgumentException(
+          s"Parent path '$path' does not exist."
+        )
+      case Some(path) => Some(path)
+    }
+
     val experimentsPath = namedParameters.get("experimentsPath") match {
       case None => None
       case Some(path) if path.isEmpty() =>
@@ -178,6 +193,7 @@ object Demo extends LoggingComponent {
            Option(experimentsDir.listFiles())
              .getOrElse(Array.empty[File])
              .filter(_.isDirectory)
+             .filter(f => (f.getName != "config") && (f.getName != "logs") && (parentPath.fold(true)(pp => f.getPath != pp.stripSuffix("/"))))
              .map(_.getName)
          if subdirs.isEmpty then
            throw new IllegalArgumentException(
@@ -191,24 +207,14 @@ object Demo extends LoggingComponent {
         "Experiment path is required if --experimentsPath is not set."
       )
 
+    if experimentPath.isDefined && experimentsPath.isDefined then
+      throw new IllegalArgumentException(
+        "Cannot set both experimentPath and experimentsPath; only one may be set."
+      )
+
     val runs = parseRunsParam(namedParameters)
     val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
     val headless = effectiveHeadless(requestedHeadless, runs, experimentPath)
-
-    val parentPath = namedParameters.get("parent") match {
-      case None => None
-      case Some(path) if path.isEmpty() =>
-        throw new IllegalArgumentException("Parent path must be non-empty.")
-      case Some(path) if !path.endsWith("/") => Some(path + "/")
-      case Some(path)                        => Some(path)
-    } match {
-      case None => None
-      case Some(path) if !File(path).exists() =>
-        throw new IllegalArgumentException(
-          s"Parent path '$path' does not exist."
-        )
-      case Some(path) => Some(path)
-    }
 
     CommandLineParams(experimentPath, experimentsPath, runs, headless, parentPath)
   }
@@ -495,8 +501,7 @@ object Demo extends LoggingComponent {
       // This effectively makes --experimentsPath greater precedent than experimentPath, but prohibiting setting both should have been enforced by this point.
       if params.experimentsPath.isDefined then
         val experimentsFolder = new File(params.experimentsPath.get)
-        experimentsFolder.listFiles().filter(_.isDirectory).filter(f => (f.getName != "config") && (f.getName != "logs")).sortBy(_.getName).foreach { experimentDir =>
-          println(s"Running experiment in folder ${experimentDir.getName}")
+        experimentsFolder.listFiles().filter(_.isDirectory).filter(f => (f.getName != "config") && (f.getName != "logs") && (params.parentPath.fold(true)(pp => f.getPath != pp.stripSuffix("/")))).sortBy(_.getName).foreach { experimentDir =>
           val experimentParams = params.copy(experimentPath = Some(experimentDir.getPath + "/"))
           val experimentConfig = loadConfig(experimentParams)
           Await.result(runExperiment(experimentParams, experimentConfig, None), Duration.Inf)

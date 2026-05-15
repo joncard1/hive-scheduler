@@ -3,6 +3,7 @@ package eusocialcooperation.scheduler
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.OptionValues
+import java.io.File
 
 class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
 
@@ -122,8 +123,44 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
   }
 
   test("parseCommandLineParams does not require experimentPath when --experimentsPath is set") {
-    val params = Demo.parseCommandLineParams(Array("--experimentsPath=experiments"))
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf/"))
     params.experimentPath should not be `defined`
+  }
+
+  test("parseCommandLineParams rejects experimentsPath with config, logs, and the parent folder only") {
+    val testHarnessFolder = "target/testharness"
+    val logsFolder = new File(s"${testHarnessFolder}/logs")
+    val configFolder = new File(s"${testHarnessFolder}/config")
+    val parentFolder = new File(s"${testHarnessFolder}/parent")
+    logsFolder.mkdirs()
+    configFolder.mkdirs()
+    parentFolder.mkdirs()
+    try {
+      val exception = intercept[IllegalArgumentException] {
+        Demo.parseCommandLineParams(Array(s"--experimentsPath=${testHarnessFolder}/", s"--parent=${testHarnessFolder}/parent/"))
+      }
+      exception.getMessage should include(s"Experiments path '${testHarnessFolder}/' must contain at least one subdirectory representing an experiment.")
+    } finally {
+      new File(testHarnessFolder).delete()
+    }
+  }
+
+  test("parseCommandLineParams acceptsexperimentsPath with config, logs, and the parent folder and an experiment folder.") {
+    val testHarnessFolder = "target/testharness"
+    val logsFolder = new File(s"${testHarnessFolder}/logs")
+    val configFolder = new File(s"${testHarnessFolder}/config")
+    val parentFolder = new File(s"${testHarnessFolder}/parent")
+    val experimentFolder = new File(s"${testHarnessFolder}/experiment1")
+    logsFolder.mkdirs()
+    configFolder.mkdirs()
+    parentFolder.mkdirs()
+    experimentFolder.mkdirs()
+    try {
+      val commandLineParams = Demo.parseCommandLineParams(Array(s"--experimentsPath=${testHarnessFolder}/", s"--parent=${testHarnessFolder}/parent/"))
+      commandLineParams.experimentsPath shouldEqual Some(s"${testHarnessFolder}/")
+    } finally {
+      new File(testHarnessFolder).delete()
+    }
   }
 
   test("parseCommandLineParams requires experimentPath when --experimentsPath is not set") {
@@ -134,18 +171,18 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
   }
 
   test("parseCommandLineParams defaults to --headless=true when --experimentsPath is set") {
-    val params = Demo.parseCommandLineParams(Array("--experimentsPath=experiments/"))
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf/"))
     params.headless shouldEqual true
   }
 
   test("parseCommandLineParams preserves trailing '/' in --experimentsPath") {
-    val params = Demo.parseCommandLineParams(Array("--experimentsPath=experiments/"))
-    params.experimentsPath shouldEqual Some("experiments/")
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf/"))
+    params.experimentsPath shouldEqual Some("testconf/")
   }
 
   test("parseCommandLineParams adds trailing '/' to --experimentsPath") {
-    val params = Demo.parseCommandLineParams(Array("--experimentsPath=experiments"))
-    params.experimentsPath shouldEqual Some("experiments/")
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf"))
+    params.experimentsPath shouldEqual Some("testconf/")
   }
 
   // TODO: parseCommandLineParams should reject --experimentsPath if there are no folders in other than /config (which is not required)
