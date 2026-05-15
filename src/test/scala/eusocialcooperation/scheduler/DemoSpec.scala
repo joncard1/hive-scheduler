@@ -141,6 +141,9 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
       }
       exception.getMessage should include(s"Experiments path '${testHarnessFolder}/' must contain at least one subdirectory representing an experiment.")
     } finally {
+      logsFolder.delete()
+      configFolder.delete()
+      parentFolder.delete()
       new File(testHarnessFolder).delete()
     }
   }
@@ -159,6 +162,10 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
       val commandLineParams = Demo.parseCommandLineParams(Array(s"--experimentsPath=${testHarnessFolder}/", s"--parent=${testHarnessFolder}/parent/"))
       commandLineParams.experimentsPath shouldEqual Some(s"${testHarnessFolder}/")
     } finally {
+      logsFolder.delete()
+      configFolder.delete()
+      parentFolder.delete()
+      experimentFolder.delete()
       new File(testHarnessFolder).delete()
     }
   }
