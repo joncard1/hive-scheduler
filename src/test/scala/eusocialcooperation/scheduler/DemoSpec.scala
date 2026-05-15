@@ -2,8 +2,10 @@ package eusocialcooperation.scheduler
 
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
+import org.scalatest.OptionValues
+import java.io.File
 
-class DemoSpec extends AnyFunSuite with Matchers {
+class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
 
   test("parseRunsParam defaults to 1 when omitted") {
     Demo.parseRunsParam(Map.empty) shouldEqual 1
@@ -35,13 +37,21 @@ class DemoSpec extends AnyFunSuite with Matchers {
     Demo.runOutputPath("experiments/simple/", 2, 3) shouldEqual "experiments/simple/run_002/"
   }
 
+  // TODO: runOutputPath should be --experimentsPath/<a folder> when --experimentsPath is set and --runs == 1
+  // TODO: runOutputPath should be --experimentsPath/<a folder>/run_XXX/ when --experimentsPath is set and --runs > 1
+  // TODO: runOutputPath should be settable.
+
   test("effectiveHeadless keeps requested value for single run") {
-    Demo.effectiveHeadless(requestedHeadless = false, runs = 1) shouldEqual false
-    Demo.effectiveHeadless(requestedHeadless = true, runs = 1) shouldEqual true
+    Demo.effectiveHeadless(requestedHeadless = false, runs = 1, Some("value")) shouldEqual false
+    Demo.effectiveHeadless(requestedHeadless = true, runs = 1, Some("value")) shouldEqual true
   }
 
   test("effectiveHeadless forces headless for multi-run") {
-    Demo.effectiveHeadless(requestedHeadless = false, runs = 2) shouldEqual true
+    Demo.effectiveHeadless(requestedHeadless = false, runs = 2, Some("value")) shouldEqual true
+  }
+
+  test("effectiveHeadless defaults to true when --experimentPath is not set (assumes experimentsPath was set)") {
+    Demo.effectiveHeadless(requestedHeadless = false, runs = 1, None) shouldEqual true
   }
 
   test("Running in non-headless mode loads the correct FXML file") {
@@ -54,18 +64,15 @@ class DemoSpec extends AnyFunSuite with Matchers {
 
   // ── parseCommandLineParams ──────────────────────────────────────────────────
 
-  test("parseCommandLineParams defaults to testconf/ when no args are given") {
-    Demo.parseCommandLineParams(Array.empty).experimentPath shouldEqual "testconf/"
-  }
-
   test("parseCommandLineParams appends trailing slash to bare experiment path") {
-    Demo.parseCommandLineParams(Array("testconf")).experimentPath shouldEqual "testconf/"
+    Demo.parseCommandLineParams(Array("testconf")).experimentPath.value shouldEqual "testconf/"
   }
 
   test("parseCommandLineParams keeps existing trailing slash on experiment path") {
-    Demo.parseCommandLineParams(Array("testconf/")).experimentPath shouldEqual "testconf/"
+    Demo.parseCommandLineParams(Array("testconf/")).experimentPath.value shouldEqual "testconf/"
   }
 
+  // TODO: This needs to be removed.
   test("parseCommandLineParams rejects an empty string as experiment path") {
     val exception = intercept[IllegalArgumentException] {
       Demo.parseCommandLineParams(Array(""))
@@ -115,34 +122,106 @@ class DemoSpec extends AnyFunSuite with Matchers {
     exception.getMessage should include("does not exist")
   }
 
+  test("parseCommandLineParams does not require experimentPath when --experimentsPath is set") {
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf/"))
+    params.experimentPath should not be `defined`
+  }
+
+  test("parseCommandLineParams rejects experimentsPath with config, logs, and the parent folder only") {
+    val testHarnessFolder = "target/testharness"
+    val logsFolder = new File(s"${testHarnessFolder}/logs")
+    val configFolder = new File(s"${testHarnessFolder}/config")
+    val parentFolder = new File(s"${testHarnessFolder}/parent")
+    logsFolder.mkdirs()
+    configFolder.mkdirs()
+    parentFolder.mkdirs()
+    try {
+      val exception = intercept[IllegalArgumentException] {
+        Demo.parseCommandLineParams(Array(s"--experimentsPath=${testHarnessFolder}/", s"--parent=${testHarnessFolder}/parent/"))
+      }
+      exception.getMessage should include(s"Experiments path '${testHarnessFolder}/' must contain at least one subdirectory representing an experiment.")
+    } finally {
+      new File(testHarnessFolder).delete()
+    }
+  }
+
+  test("parseCommandLineParams acceptsexperimentsPath with config, logs, and the parent folder and an experiment folder.") {
+    val testHarnessFolder = "target/testharness"
+    val logsFolder = new File(s"${testHarnessFolder}/logs")
+    val configFolder = new File(s"${testHarnessFolder}/config")
+    val parentFolder = new File(s"${testHarnessFolder}/parent")
+    val experimentFolder = new File(s"${testHarnessFolder}/experiment1")
+    logsFolder.mkdirs()
+    configFolder.mkdirs()
+    parentFolder.mkdirs()
+    experimentFolder.mkdirs()
+    try {
+      val commandLineParams = Demo.parseCommandLineParams(Array(s"--experimentsPath=${testHarnessFolder}/", s"--parent=${testHarnessFolder}/parent/"))
+      commandLineParams.experimentsPath shouldEqual Some(s"${testHarnessFolder}/")
+    } finally {
+      new File(testHarnessFolder).delete()
+    }
+  }
+
+  test("parseCommandLineParams requires experimentPath when --experimentsPath is not set") {
+    val exception = intercept[IllegalArgumentException] {
+      Demo.parseCommandLineParams(Array.empty)
+    }
+    exception.getMessage should include("Experiment path is required")
+  }
+
+  test("parseCommandLineParams defaults to --headless=true when --experimentsPath is set") {
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf/"))
+    params.headless shouldEqual true
+  }
+
+  test("parseCommandLineParams preserves trailing '/' in --experimentsPath") {
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf/"))
+    params.experimentsPath shouldEqual Some("testconf/")
+  }
+
+  test("parseCommandLineParams adds trailing '/' to --experimentsPath") {
+    val params = Demo.parseCommandLineParams(Array("--experimentsPath=testconf"))
+    params.experimentsPath shouldEqual Some("testconf/")
+  }
+
+  // TODO: parseCommandLineParams should reject --experimentsPath if there are no folders in other than /config (which is not required)
+
   // ── CommandLineParams case class ────────────────────────────────────────────
 
   test("CommandLineParams stores all fields correctly") {
-    val params = Demo.CommandLineParams("testconf/", 2, true, Some("testconf/"))
-    params.experimentPath shouldEqual "testconf/"
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 2, true, Some("testconf/"))
+    params.experimentPath.value `shouldBe` ("testconf/")
     params.runs shouldEqual 2
     params.headless shouldEqual true
     params.parentPath shouldEqual Some("testconf/")
   }
 
   test("CommandLineParams supports structural equality") {
-    val p1 = Demo.CommandLineParams("testconf/", 1, false, None)
-    val p2 = Demo.CommandLineParams("testconf/", 1, false, None)
+    val p1 = Demo.CommandLineParams(Some("testconf/"), None, 1, false, None)
+    val p2 = Demo.CommandLineParams(Some("testconf/"), None, 1, false, None)
     p1 shouldEqual p2
   }
 
   // ── loadConfig ──────────────────────────────────────────────────────────────
 
   test("loadConfig loads configuration from testconf/") {
-    val params = Demo.CommandLineParams("testconf/", 1, headless = true, None)
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None)
     val config = Demo.loadConfig(params)
     config should not be null
     config.hasPath("duration") shouldEqual true
   }
 
   test("loadConfig reads duration from testconf/") {
-    val params = Demo.CommandLineParams("testconf/", 1, headless = true, None)
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None)
     val config = Demo.loadConfig(params)
     config.getDuration("duration").toMillis shouldEqual 10000L
+  }
+
+  test("loadConfig loads the default configuration from classpath") {
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None)
+    val config = Demo.loadConfig(params)
+    config.hasPath("testkey") shouldEqual true
+    config.getString("testkey") shouldEqual "testvalue"
   }
 }
