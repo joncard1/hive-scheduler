@@ -29,6 +29,9 @@ lazy val root = (project in file("."))
     )
   )
 
+enablePlugins(DockerPlugin)
+enablePlugins(AssemblyPlugin)
+
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", "services", _*) => MergeStrategy.concat
   case PathList("META-INF", _*) => MergeStrategy.discard
@@ -36,4 +39,19 @@ assembly / assemblyMergeStrategy := {
   case _                        => MergeStrategy.first
 }
 
+Docker / maintainer := "joncard93@hotmail.com"
+dockerBaseImage := "eclipse-temurin:25"
+val pekkoClusterPort = 7355
+dockerExposedPorts := Seq(pekkoClusterPort)
+Docker / mappings ++= Seq(
+  (Compile / assembly).value -> s"${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar",
+  (Compile / sourceDirectory).value / "docker" / "application.conf" -> s"${(Docker/defaultLinuxInstallLocation).value}/etc/application.conf"
+)
+dockerExposedVolumes := Seq("/opt/experiments")
+
+
+// TODO: Adding /etc/hive-scheduler in anticipation of the application.conf I'll probably need to activate clustering and which I may want to add separately. experiment.conf and the parent experiment.conf I may want to make more configurable for Kubernetes; we'll see how that works.
+// TODO: I'm apparently hard-coding the parent experiment to /experiments, and I forgot that this should probably be run the way I am running the experiments now, which is to to loop over a folder. Suggesting that I didn't design this for how I use it.
+// TODO: I'm guessing that this will need to get runs, experimentsPath, and parent from the environment, or something, so that it can be specified in a Kubernetes Job.
+dockerEntrypoint := Seq("java", "-Xmx5g", "-classpath", s"${(Docker/defaultLinuxInstallLocation).value}/etc", "-jar", s"${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar", "--experimentsPath=/opt/experiments/experiment", "--parent=/opt/experiments", "--runs=10")
 // See https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html for instructions on how to publish to Sonatype.

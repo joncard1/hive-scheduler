@@ -25,6 +25,8 @@ import org.jfree.chart.JFreeChart
 import org.jfree.chart3d.Chart3D
 import scala.util.Using
 import eusocialcooperation.scheduler.archiver.Archiver
+import eusocialcooperation.scheduler.DataPoint
+import scala.compiletime.uninitialized
 
 /** The main entry point of the application. When this is started, the system is
   * constructed in 2 parts: the UI and the processing thread. The UI is
@@ -58,7 +60,8 @@ object Demo extends LoggingComponent {
     *   The optional parent experiment path for configuration fallback.
     */
   case class CommandLineParams(
-      experimentPath: String,
+      experimentPath: Option[String],
+      experimentsPath: Option[String],
       runs: Int,
       headless: Boolean,
       parentPath: Option[String]
@@ -67,11 +70,11 @@ object Demo extends LoggingComponent {
   private[scheduler] val durationConfigKey = "duration"
   private[scheduler] val mdcKey = "experiment"
   private[scheduler] val headlessModeFxmlFileName = "/headless-mode.fxml"
-  val mainLayoutFxmlFileName = "/main-layout.fxml"
+  private[scheduler] val mainLayoutFxmlFileName = "/main-layout.fxml"
 
   /** Shared state read by [[GUIApp]] after [[main]] has populated it. */
-  @volatile private[scheduler] var commandLineParams: CommandLineParams = _
-  @volatile private[scheduler] var config: Config = _
+  @volatile private[scheduler] var commandLineParams: CommandLineParams = uninitialized
+  @volatile private[scheduler] var config: Config = uninitialized
 
   /** Holds a reference to the currently running actor system so that
     * [[GUIApp.stop]] can cancel it when the window closes.
@@ -79,6 +82,9 @@ object Demo extends LoggingComponent {
   private[scheduler] val currentActorSystem
       : AtomicReference[Option[ActorSystem[Dispatcher.Command]]] =
     new AtomicReference(None)
+
+  private[scheduler] val defaultApplicationConfig = ConfigFactory.defaultApplication()
+
 
   def parseRunsParam(namedParameters: Map[String, String]): Int = {
     namedParameters.get("runs") match {
@@ -109,8 +115,8 @@ object Demo extends LoggingComponent {
     }
   }
 
-  def effectiveHeadless(requestedHeadless: Boolean, runs: Int): Boolean =
-    requestedHeadless || runs > 1
+  def effectiveHeadless(requestedHeadless: Boolean, runs: Int, experimentPath: Option[String]): Boolean =
+    requestedHeadless || runs > 1 || experimentPath.isEmpty
 
   def fxmlFileName(headless: Boolean): String =
     if (headless) headlessModeFxmlFileName else mainLayoutFxmlFileName
@@ -119,7 +125,7 @@ object Demo extends LoggingComponent {
     *
     * Named arguments use the format `--key=value`; a bare flag `--key` is
     * treated as `--key=true`. The first positional argument is the experiment
-    * path; if omitted, `"testconf/"` is used as a default.
+    * path.
     *
     * @param args
     *   Raw command-line arguments.
@@ -136,22 +142,19 @@ object Demo extends LoggingComponent {
     }.toMap
 
     val experimentPath = unnamedArgs.headOption match {
-      case None => "testconf/"
+      case None => Option.empty[String]
       case Some(path) if path.isEmpty() =>
         throw new IllegalArgumentException("Experiment path must be non-empty.")
-      case Some(path) if !path.endsWith("/") => path + "/"
-      case Some(path)                        => path
+      case Some(path) if !path.endsWith("/") => Some(path + "/")
+      case Some(path)                        => Some(path)
     } match {
-      case path if !File(path).exists() =>
+      case None => None
+      case Some(path) if !File(path).exists() =>
         throw new IllegalArgumentException(
           s"Experiment path '$path' does not exist."
         )
       case path => path
     }
-
-    val runs = parseRunsParam(namedParameters)
-    val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
-    val headless = effectiveHeadless(requestedHeadless, runs)
 
     val parentPath = namedParameters.get("parent") match {
       case None => None
@@ -168,7 +171,52 @@ object Demo extends LoggingComponent {
       case Some(path) => Some(path)
     }
 
-    CommandLineParams(experimentPath, runs, headless, parentPath)
+    val experimentsPath = namedParameters.get("experimentsPath") match {
+      case None => None
+      case Some(path) if path.isEmpty() =>
+        throw new IllegalArgumentException("Experiments path must be non-empty.")
+      case Some(path) if !path.endsWith("/") => Some(path + "/")
+      case x @ Some(path)                        => x
+    } match {
+      case None => None
+      case x @ Some(path) =>
+         val experimentsDir = File(path)
+         if !experimentsDir.exists() then
+           throw new IllegalArgumentException(
+             s"Experiments path '$path' does not exist."
+           )
+         if !experimentsDir.isDirectory() then
+           throw new IllegalArgumentException(
+             s"Experiments path '$path' must be a directory."
+           )
+         val subdirs =
+           Option(experimentsDir.listFiles())
+             .getOrElse(Array.empty[File])
+             .filter(_.isDirectory)
+             .filter(f => (f.getName != "config") && (f.getName != "logs") && (parentPath.fold(true)(pp => f.getPath != pp.stripSuffix("/"))))
+             .map(_.getName)
+         if subdirs.isEmpty then
+           throw new IllegalArgumentException(
+             s"Experiments path '$path' must contain at least one subdirectory representing an experiment."
+           )
+        x
+    }
+
+    if experimentPath.isEmpty && experimentsPath.isEmpty then
+      throw new IllegalArgumentException(
+        "Experiment path is required if --experimentsPath is not set."
+      )
+
+    if experimentPath.isDefined && experimentsPath.isDefined then
+      throw new IllegalArgumentException(
+        "Cannot set both experimentPath and experimentsPath; only one may be set."
+      )
+
+    val runs = parseRunsParam(namedParameters)
+    val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
+    val headless = effectiveHeadless(requestedHeadless, runs, experimentPath)
+
+    CommandLineParams(experimentPath, experimentsPath, runs, headless, parentPath)
   }
 
   /** Loads the experiment configuration for the given parameters.
@@ -192,12 +240,12 @@ object Demo extends LoggingComponent {
     def getConfigFromPath(path: String) =
       ConfigFactory.load(getConfigLoader(path), experimentConfigurationFileName)
 
-    params.parentPath
-      .fold(getConfigFromPath(params.experimentPath)) { parent =>
-        getConfigFromPath(params.experimentPath)
-          .withFallback(getConfigFromPath(parent))
-      }
-      .getConfig(this.getClass.getPackage.getName)
+    val parentConfig = params.parentPath.fold(defaultApplicationConfig) { parent =>
+      getConfigFromPath(parent).withFallback(defaultApplicationConfig)
+    }
+    params.experimentPath.fold(parentConfig) { experimentPath =>
+      getConfigFromPath(experimentPath).withFallback(parentConfig)
+    }.getConfig(this.getClass.getPackage.getName)
   }
 
   /** Cancels the currently running actor system, if any, by terminating it. */
@@ -209,6 +257,7 @@ object Demo extends LoggingComponent {
     }
   }
 
+  // TODO: I think I'd prefer this didn't return a Future, but rather GUIApp call this in a Future.
   /** Runs the experiment asynchronously.
     *
     * Creates the Pekko actor system for each run, samples queue lengths,
@@ -234,7 +283,9 @@ object Demo extends LoggingComponent {
   )(implicit ec: scala.concurrent.ExecutionContext): Future[Unit] = {
     given Config = appConfig
 
-    MDC.put(mdcKey, params.experimentPath)
+    require(params.experimentPath.isDefined, "The method runExperiment requires an experimentPath be set. If one was not provided by the command-line, a copy of CommandLineParams with the path set should have been provided by the caller.")
+    // TODO: The outputPath may not be necessarily be based on experiment path.
+    MDC.put(mdcKey, params.experimentPath.get)
     given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
 
     val durationMs = {
@@ -248,7 +299,8 @@ object Demo extends LoggingComponent {
     }
 
     Future {
-      MDC.put(mdcKey, params.experimentPath)
+      // TODO: See above
+      MDC.put(mdcKey, params.experimentPath.get)
 
       def createAndSaveCharts(
           points: AtomicReference[Set[DataPoint[Sample]]],
@@ -304,8 +356,9 @@ object Demo extends LoggingComponent {
       }
 
       def runSingleExperiment(runNumber: Int): Unit = {
+        // TODO: Double-check this
         val outputPath =
-          runOutputPath(params.experimentPath, runNumber, params.runs)
+          runOutputPath(params.experimentPath.get, runNumber, params.runs)
         new java.io.File(outputPath).mkdirs()
         new java.io.File(s"${outputPath}logs").mkdirs()
         // TODO: This is side-effect-ful. It correctly sets the MDC for the current thread, but it clears out the prior value.
@@ -411,12 +464,12 @@ object Demo extends LoggingComponent {
       }
 
       (1 to params.runs).foreach(runSingleExperiment)
-      MDC.put(mdcKey, params.experimentPath)
+      // TODO: Double-check this
+      MDC.put(mdcKey, params.experimentPath.get)
     }.andThen {
-      case scala.util.Success(_) =>
-        logger.info("All runs completed successfully.")
       case scala.util.Failure(exception) =>
-        logger.error("Error in processing thread: {}", exception.getMessage)
+        // TODO: Reminder; I'm not sure if this will work correctly, because I'm not sure if the error in the last position will be interpreted correctly when the format only has one substitution. And I'm not sure how to test it.
+        logger.error("Error in the latest run of {}", params.experimentPath.get, exception)
     }
   }
 
@@ -434,21 +487,42 @@ object Demo extends LoggingComponent {
     val params = parseCommandLineParams(args)
     commandLineParams = params
     config = loadConfig(params)
-    MDC.put(mdcKey, params.experimentPath)
+    // TODO: Double-check this.
 
     if (!params.headless) {
+      MDC.put(mdcKey, params.experimentPath.get)
+
       javafx.application.Platform.setImplicitExit(true)
-      javafx.application.Application.launch(classOf[GUIApp], args: _*)
+      javafx.application.Application.launch(classOf[GUIApp], args*)
     } else {
       implicit val ec: scala.concurrent.ExecutionContext =
         scala.concurrent.ExecutionContext.global
-      Await.result(runExperiment(params, config, None), Duration.Inf)
+
+      // This effectively makes --experimentsPath greater precedent than experimentPath, but prohibiting setting both should have been enforced by this point.
+      if params.experimentsPath.isDefined then
+        val experimentsFolder = new File(params.experimentsPath.get)
+        experimentsFolder.listFiles().filter(_.isDirectory).filter(f => (f.getName != "config") && (f.getName != "logs") && (params.parentPath.fold(true)(pp => f.getPath != pp.stripSuffix("/")))).sortBy(_.getName).foreach { experimentDir =>
+          val experimentParams = params.copy(experimentPath = Some(experimentDir.getPath + "/"))
+          val experimentConfig = loadConfig(experimentParams)
+          Await.result(runExperiment(experimentParams, experimentConfig, None), Duration.Inf)
+        }
+      else if params.experimentPath.isDefined then {      
+        Await.result(runExperiment(params, config, None), Duration.Inf)
+      } else {
+        throw new IllegalArgumentException(
+          "Either experimentPath or experimentsPath must be provided. This should have been enforced by this point; check the command-line arguments parsing logic."
+        )
+      }
     }
   }
 }
 // TODO list:
-// 1. With a low exploration radius and a low weight per prospect, I would have thought the low areas would be well-explored, but it seems not. I would have thought there would be more low-threshold points when submitting the prospects, so the number of exploiters would be high. Which it may be; that would show up as duplicates, not density. I would have to re-introduce some randomness around the prospect to do that.
 // 7. Do the main chart with a colorbar legend with the color determined by the sequence #.
 // 10. Change the behavior of the explorer to only explore a maximum number of prospects, rather than having to find the edge.
 // 14. JFree seems to take longer, but I think I generate a lot more data now.
 // 16. I think there needs to be a listener so that when the window closes, the processing thread is interrupted.
+// 17. I think the GUI version of the app works ok, but the way I use the headless mode is that I want to supply a folder full of experiments, and each of those should be run multiple times; not running a single folder multiple times and then running the application again for the next folder. This implies:
+//     a. The experiments themselves should be added as part of the Kubernetes configuration. I'm not sure how to do that.
+//     b. The number of pods in the Kubernetes cluster should make it into the pekko configuration, because I want the all to start when all of the pods have joined.
+//     c. The iteration of the folders should happen in Demo, not in a bash script. Which means figuring out how the command-line arguments should work differently.
+// 18. Make experimentPath as optional. If it is not headless, then it should be required. Otherwise, --parent is required. If not supplied, the run experiment on every directory in parent except "config".
