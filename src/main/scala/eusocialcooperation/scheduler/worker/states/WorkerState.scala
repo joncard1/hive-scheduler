@@ -39,7 +39,7 @@ trait WorkerState extends LoggingComponent {
     * @param pointBind
     *   A function to act as the bind operation for DataPoint[Point].
     * @param actorName
-    *   The name of the thread, actor, of other key to identify which worker created the a DataPoint.
+    *   The name of the thread, actor, or other key used to identify which worker created a DataPoint.
     * @param scheduler
     *   The Apache Pekko scheduler used to schedule messages to be sent in the
     *   future.
