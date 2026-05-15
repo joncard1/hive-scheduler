@@ -14,9 +14,9 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import com.typesafe.config.Config
 import eusocialcooperation.scheduler.Dispatcher
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
-import eusocialcooperation.scheduler.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.Dispatcher.RequestPoints
-import eusocialcooperation.scheduler.DataPointActor
+import eusocialcooperation.scheduler.datapoint.DataPointActor
 import eusocialcooperation.scheduler.Sample
 import org.apache.pekko.actor.typed.ActorRef
 import eusocialcooperation.scheduler.Point
@@ -51,6 +51,10 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         (config.getDouble).expects(ExploiterState.fuzzinessConfigKey).returning(0.01).anyNumberOfTimes()
         (config.getDouble).expects(ExploiterState.incrementConfigKey).returning(0.001).anyNumberOfTimes()
 
+        given sampleBind: DataPoint.DataPointBind[Sample] = mock[DataPoint.DataPointBind[Sample]]
+        given pointBind: DataPoint.DataPointBind[Point] = mock[DataPoint.DataPointBind[Point]]
+        given actorName: String = "workername"
+
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
 
         val newProspects = Set(
@@ -65,8 +69,8 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
             case _ => Behaviors.same
         }), "dispatcher")
 
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.createTestProbe[DataPointActor.Create[Sample]]().ref
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.createTestProbe[DataPointActor.Create[Point]]().ref
+        //given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.createTestProbe[DataPointActor.Create[Sample]]().ref
+        //given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.createTestProbe[DataPointActor.Create[Point]]().ref
 
         try {
             val preference = BigDecimal((weightPerProspect * newProspects.size) - 0.001)
@@ -86,6 +90,10 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         (config.getDouble).expects(ExplorerState.explorationRadiusConfigKey).returning(explorationRadius).atLeastOnce()
         (config.getDouble).expects(ExplorerState.thresholdConfigKey).returning(threshold).atLeastOnce()
 
+        given sampleBind: DataPoint.DataPointBind[Sample] = mock[DataPoint.DataPointBind[Sample]]
+        given pointBind: DataPoint.DataPointBind[Point] = mock[DataPoint.DataPointBind[Point]]
+        given actorName: String = "workername"
+
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
 
         val newProspects = Set(
@@ -100,8 +108,8 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
             case _ => Behaviors.same
         }), "dispatcher")
 
-        given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.createTestProbe[DataPointActor.Create[Sample]]().ref
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.createTestProbe[DataPointActor.Create[Point]]().ref
+        //given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.createTestProbe[DataPointActor.Create[Sample]]().ref
+        //given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.createTestProbe[DataPointActor.Create[Point]]().ref
 
         try {
             val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)

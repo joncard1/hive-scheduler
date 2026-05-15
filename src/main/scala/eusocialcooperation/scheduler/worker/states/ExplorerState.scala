@@ -6,8 +6,10 @@ import org.apache.pekko.actor.typed.scaladsl.ActorContext
 import org.apache.pekko.actor.typed.Scheduler
 import scala.util.Random
 import eusocialcooperation.scheduler.worker.states.ExplorerState.State
-import eusocialcooperation.scheduler.DataPoint.Phase
+import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
 import com.typesafe.config.Config
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPointActor
 
 object ExplorerState {
     val numPointsToExploreConfigKey = "explorer.numPointsToExplore"
@@ -38,14 +40,14 @@ case class ExplorerState(
 
     remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 
-    override def apply()(using sampleRef: ActorRef[DataPointActor.Create[Sample]], pointRef: ActorRef[DataPointActor.Create[Point]], scheduler: Scheduler): WorkerState = {
+    override def apply()(using sampleBind: DataPoint.DataPointBind[Sample], pointBind: DataPoint.DataPointBind[Point], actorName: String, scheduler: Scheduler): WorkerState = {
         logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
     
         var (x, y) = startLocation
         
         // Explore a certain number of points.
         val result = kernelFn(x, y)
-        val res = DataPoint((x, y, result))
+        val res = sampleBind((x, y, result))
 
         //dispatcher ! Dispatcher.AddPoint(res)
         var angleMin = 0.0
@@ -103,7 +105,7 @@ case class ExplorerState(
                             val numSamples = memory.size
                             val avgX = sumX / numSamples
                             val avgY = sumY / numSamples
-                            val prospect = DataPoint((avgX, avgY))
+                            val prospect = pointBind((avgX, avgY))
                             // TODO: Refactor out the calculation of the delay to make clear this could be non-linear
                             dispatcher ! Dispatcher.AddProspect(prospect, delayPerProspect * numSamples)
                     }

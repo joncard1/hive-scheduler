@@ -25,7 +25,7 @@ import org.jfree.chart.JFreeChart
 import org.jfree.chart3d.Chart3D
 import scala.util.Using
 import eusocialcooperation.scheduler.archiver.Archiver
-import eusocialcooperation.scheduler.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPoint
 import scala.compiletime.uninitialized
 
 /** The main entry point of the application. When this is started, the system is

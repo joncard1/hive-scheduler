@@ -1,7 +1,7 @@
 package eusocialcooperation.scheduler.charter
 
 import eusocialcooperation.scheduler.Charter
-import eusocialcooperation.scheduler.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.Sample
 import eusocialcooperation.scheduler.Point
 import scalafx.scene.Node

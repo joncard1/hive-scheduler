@@ -8,6 +8,7 @@ import java.io.Writer
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.io.FileOutputStream
+import eusocialcooperation.scheduler.datapoint.DataPoint
 
 class DefaultArchiver private[archiver] (
     experimentPath: String,

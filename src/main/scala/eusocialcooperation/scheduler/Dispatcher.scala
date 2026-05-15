@@ -14,6 +14,8 @@ import org.apache.pekko.actor.typed.Scheduler
 import org.apache.pekko.util.Timeout
 import scala.concurrent.Future
 import scala.concurrent.Await
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPointActor
 
 /** This actor represents the "world" that the agents can see. It starts the
   * various workers and references, but it is only accessed by the workers so

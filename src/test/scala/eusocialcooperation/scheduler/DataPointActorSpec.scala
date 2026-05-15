@@ -10,7 +10,9 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import org.scalatest.matchers.should.Matchers
 import java.util.concurrent.atomic.AtomicReference
-import eusocialcooperation.scheduler.DataPoint.Phase
+import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPointActor
 
 class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 

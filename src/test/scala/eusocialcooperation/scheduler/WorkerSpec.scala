@@ -21,6 +21,7 @@ import scala.concurrent.Future
 import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
 import scala.concurrent.ExecutionContext
 import org.apache.pekko.actor.typed.ActorRef
+import eusocialcooperation.scheduler.datapoint.DataPointActor
 
 class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory {
 
@@ -77,6 +78,7 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
     }
   }
 
+  // TODO: This is a bad test. Waiting for 1 second isn't reliable, and I'm not sure the probe monitor will wait until the probe has finished processing before allowing passage forward.
   test("Worker handles Stop message when it has started the thread") {
     given ExecutionContext = ExecutionContext.global
     implicit val config: Config = mock[Config]
@@ -98,7 +100,9 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
       // Wait for the worker to finish starting.
       worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Sample], Set(dpaSample)))
       worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Point], Set(dpaPoint)))
-      Thread.sleep(1000) // Wait for the scheduled job to execute
+      //Thread.sleep(1000) // Wait for the scheduled job to execute
+      workerProbe.expectMessageType[Worker.DPActorListing]
+      workerProbe.expectMessageType[Worker.DPActorListing]
       val response = Await.result[Worker.WorkerStopped](worker.ask(Worker.Stop(_)), 60.seconds)
       response.result shouldBe a[Success[Unit]]
     } finally {
@@ -127,6 +131,8 @@ class WorkerSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with M
       worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Sample], Set(dpaSample)))
       worker ! Worker.DPActorListing(Listing(DataPointActor.DataPointActorKey[Point], Set(dpaPoint)))
       //Thread.sleep(1000) // Wait for the scheduled job to execute
+      workerProbe.expectMessageType[Worker.DPActorListing]
+      workerProbe.expectMessageType[Worker.DPActorListing]
       val response = Await.result[Worker.WorkerStopped](worker.ask(Worker.Stop(_)), 5.seconds)
       response.result shouldBe a[scala.util.Failure[Unit]]
     } finally {}
