@@ -10,15 +10,25 @@ import java.io.OutputStreamWriter
 import java.io.FileOutputStream
 import eusocialcooperation.scheduler.datapoint.DataPoint
 
+object DefaultArchiver {
+  private[archiver] def constructWriter(path: String): PrintWriter = {
+    new PrintWriter(
+      new BufferedWriter(
+        new OutputStreamWriter(
+          new FileOutputStream(path)
+        )
+      )
+    )
+  }
+}
+
 class DefaultArchiver private[archiver] (
     experimentPath: String,
     pointsWriterFactory: () => Writer,
     prospectsWriterFactory: () => Writer,
     queueLengthWriterFactory: () => Writer,
     metadataWriterFactory: () => Writer
-) /*(using
-    Config
-)*/
+)
     extends Archiver
     with LoggingComponent {
 
@@ -26,38 +36,10 @@ class DefaultArchiver private[archiver] (
 
     this(
       experimentPath,
-      () =>
-        new PrintWriter(
-          new BufferedWriter(
-            new OutputStreamWriter(
-              new FileOutputStream(s"$experimentPath/pointsData.csv")
-            )
-          )
-        ),
-      () =>
-        new PrintWriter(
-          new BufferedWriter(
-            new OutputStreamWriter(
-              new FileOutputStream(s"$experimentPath/prospects.csv")
-            )
-          )
-        ),
-      () =>
-        new PrintWriter(
-          new BufferedWriter(
-            new OutputStreamWriter(
-              new FileOutputStream(s"$experimentPath/queueLengths.csv")
-            )
-          )
-        ),
-      () =>
-        new PrintWriter(
-          new BufferedWriter(
-            new OutputStreamWriter(
-              new FileOutputStream(s"$experimentPath/metadata.csv", true)
-            )
-          )
-        )
+      () => DefaultArchiver.constructWriter(s"$experimentPath/pointsData.csv"),
+      () => DefaultArchiver.constructWriter(s"$experimentPath/prospectsData.csv"),
+      () => DefaultArchiver.constructWriter(s"$experimentPath/queueLengths.csv"),
+      () => DefaultArchiver.constructWriter(s"$experimentPath/metadata.csv")
     )
   }
 

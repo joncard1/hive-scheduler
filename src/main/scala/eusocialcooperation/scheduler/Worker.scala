@@ -28,6 +28,7 @@ import org.slf4j.MDC
 import scala.util.Try
 import eusocialcooperation.scheduler.datapoint.DataPointActor
 import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler.datapoint.PekkoDataPoint
 
 /** Actor that controls the worker threads.
   */
@@ -290,7 +291,7 @@ object Worker {
               kernelFn,
               dispatcher,
               Option(
-                DataPoint.getActorDataPointBind(
+                PekkoDataPoint.getActorDataPointBind(
                   actors
                     .serviceInstances(DataPointActor.DataPointActorKey[Sample])
                     .head,
@@ -310,7 +311,7 @@ object Worker {
               dispatcher,
               sampleActor,
               Option(
-                DataPoint.getActorDataPointBind(
+                PekkoDataPoint.getActorDataPointBind(
                   actors
                     .serviceInstances(DataPointActor.DataPointActorKey[Point])
                     .head,
@@ -396,7 +397,7 @@ object Worker {
         active(
           running,
           thread,
-          DataPoint.getActorDataPointBind(
+          PekkoDataPoint.getActorDataPointBind(
             actors
               .serviceInstances(DataPointActor.DataPointActorKey[Sample])
               .head,
@@ -412,7 +413,7 @@ object Worker {
           running,
           thread,
           sampleActorRef,
-          DataPoint.getActorDataPointBind(
+          PekkoDataPoint.getActorDataPointBind(
             actors
               .serviceInstances(DataPointActor.DataPointActorKey[Point])
               .head,
