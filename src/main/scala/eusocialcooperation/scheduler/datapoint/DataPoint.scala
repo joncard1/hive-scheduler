@@ -1,9 +1,5 @@
 package eusocialcooperation.scheduler.datapoint
 
-import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.AskPattern._
-import org.apache.pekko.actor.typed.Scheduler
-import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -13,7 +9,8 @@ import scala.concurrent.duration.Duration
   */
 object DataPoint {
 
-  type DataPointUnit[A] = (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
+  type DataPointUnit[A] =
+    (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
 
   /** An enum to designate the phases in which a DataPoint can be generated.
     */
@@ -22,15 +19,13 @@ object DataPoint {
 }
 
 /** This represents a monad that tracks the metadata containing the
-  * environmental conditions when the point was generated. This implements the
-  * "unit" function of the monad, and the companion object's apply method should
-  * be used as the "unit" function. (Translation: this constructor is for
-  * testing purposes only and may be made private to the package in future. Use
-  * DataPoint(...), not new DataPoint(...))
   *
   * @param sequenceNumber
-  *   The sequence number that this data point was recorded. I am interesting in
-  *   what order all of the points were created in across the different threads.
+  *   The sequence number that this data point was recorded. I am interested in
+  *   environmental conditions when the point was generated. To create one of
+  *   these objects, use one of the "unit" functions provided by the DataPoint
+  *   companion object. what order all of the points were created in across the
+  *   different threads.
   * @param timestamp
   *   The time at which the data point was created.
   * @param actorName
@@ -59,7 +54,11 @@ class DataPoint[A](
     f(value)
   }
 
-  def map[B](f: A => B)(implicit dpb: DataPoint.DataPointUnit[B], phase: DataPoint.Phase, actorName: String): DataPoint[B] = {
+  def map[B](f: A => B)(implicit
+      dpb: DataPoint.DataPointUnit[B],
+      phase: DataPoint.Phase,
+      actorName: String
+  ): DataPoint[B] = {
     given Option[DataPoint[?]] = Some(this)
     dpb(
       f(value)

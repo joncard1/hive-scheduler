@@ -64,7 +64,7 @@ class DataPointITSpec
       given phase: DataPoint.Phase = DataPoint.Phase.Explorer
       given parent: Option[DataPoint[?]] = None
       val dataUnit = PostgresSQLDataPoint.getDBSampleUnit(run, experimentName, db)
-      val sample: Sample = (1.0, 1.5, 2.0)
+      val sample: Sample = (BigDecimal(1.0), BigDecimal(1.5), BigDecimal(2.0))
       val dp = dataUnit(sample)
       dp.sequenceNumber `should` be > 0L
       dp.timestamp `should` be > 0L
@@ -110,7 +110,7 @@ class DataPointITSpec
       given phase: DataPoint.Phase = DataPoint.Phase.Explorer
       given parent: Option[DataPoint[?]] = None
       val dataUnit = PostgresSQLDataPoint.getDBProspectUnit(run, experimentName, db)
-      val point: Point = (1.0, 1.5)
+      val point: Point = (BigDecimal(1.0), BigDecimal(1.5))
       val dp = dataUnit(point)
       dp.sequenceNumber `should` be > 0L
       dp.timestamp `should` be > 0L

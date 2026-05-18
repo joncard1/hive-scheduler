@@ -26,8 +26,8 @@ object PostgresSQLDataPoint {
         (sequenceNumber, run, experimentName, x, y) <- prospectInsertQuery += (
             run,
             experimentName,
-            value._1.toDouble,
-            value._2.toDouble
+            value._1,
+            value._2
           )
         (sequenceNumber, run, experimentName, typ, timestamp, actorName, phase, parentSequenceNumber) <- metadataInsert += (
             sequenceNumber,
@@ -62,9 +62,9 @@ object PostgresSQLDataPoint {
         (sequenceNumber, run, experimentName, x, y, z) <- sampleInsert += (
           run,
           experimentName,
-          value._1.toDouble,
-          value._2.toDouble,
-          value._3.toDouble
+          value._1,
+          value._2,
+          value._3
         )
         (sequenceNumber, run, experimentName, typ, timestamp, actorName, phase, parentSequenceNumber) <- metadataInsert += (
           sequenceNumber,
