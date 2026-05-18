@@ -24,7 +24,6 @@ class DataPointITSpec
 
   override protected def beforeEach(): Unit = {
     // Set up the database before tests
-    val config = ConfigFactory.load()
     Using.resource(Database.forConfig("postgres_db")) { db =>
       Await.result(
         db.run(

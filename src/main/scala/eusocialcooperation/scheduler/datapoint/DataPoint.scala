@@ -1,9 +1,5 @@
 package eusocialcooperation.scheduler.datapoint
 
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
-
 /** The companion object to DataPoint, which provides the "unit" operation of
   * the monad.
   */
