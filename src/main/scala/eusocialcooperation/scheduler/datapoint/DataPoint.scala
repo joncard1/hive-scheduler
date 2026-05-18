@@ -6,7 +6,6 @@ import org.apache.pekko.actor.typed.Scheduler
 import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
-import org.apache.pekko.actor.typed.Scheduler
 import scala.concurrent.duration.Duration
 
 /** The companion object to DataPoint, which provides the "unit" operation of
