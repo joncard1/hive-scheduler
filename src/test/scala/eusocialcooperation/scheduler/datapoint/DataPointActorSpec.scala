@@ -1,4 +1,4 @@
-package eusocialcooperation.scheduler
+package eusocialcooperation.scheduler.datapoint
 
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.actor.typed.scaladsl.AskPattern._
@@ -10,6 +10,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import org.scalatest.matchers.should.Matchers
 import java.util.concurrent.atomic.AtomicReference
+import eusocialcooperation.scheduler.kernel
 import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.datapoint.DataPointActor

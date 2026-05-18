@@ -9,3 +9,4 @@ target/
 /testconf/*.png
 /testconf/run*/
 .DS_Store
+.test-jvmopts

@@ -47,8 +47,8 @@ final case class ChooseState(
   val weightPerProspect = config.getDouble(Worker.weightPerProspectConfigKey)
 
   override def apply()(using
-      DataPoint.DataPointBind[Sample],
-      DataPoint.DataPointBind[Point],
+      DataPoint.DataPointUnit[Sample],
+      DataPoint.DataPointUnit[Point],
       String,
       Scheduler
   ): WorkerState = {

@@ -1,89 +1,27 @@
 package eusocialcooperation.scheduler.datapoint
 
-import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.AskPattern._
-import org.apache.pekko.actor.typed.Scheduler
-import org.apache.pekko.util.Timeout
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.Await
-import org.apache.pekko.actor.typed.Scheduler
-import scala.concurrent.duration.Duration
-
 /** The companion object to DataPoint, which provides the "unit" operation of
   * the monad.
   */
 object DataPoint {
 
-  type DataPointBind[A] = (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
+  type DataPointUnit[A] =
+    (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
 
   /** An enum to designate the phases in which a DataPoint can be generated.
     */
   enum Phase:
     case Explorer, Exploiter
-
-  /** The primary factory method for lifting a value to a DataPoint[?]. The
-    * value itself is provided, but there are a number of environmental data
-    * sources that need to be made available for this to operate.
-    *
-    * This factory method uses an Apache Pekko actor to create the DataPoint in
-    * order to provide the sequence number, because I am interested in the order
-    * the points are created in. An alternative method, such as insertion into a
-    * database, could be an alternative.
-    *
-    * My intent for this class is that, as the reporting needs of the
-    * application evolved, it would not be necessary to make major structural
-    * changes to the rest of the algorithm to keep up with them, slowing
-    * development and confusing the human reader. Instead, the compiler should
-    * be able to adapt to additions or subtractions from the list of implicit
-    * parameters with only the occaisional addition of a "given" in the code
-    * that is easier to ignore than changes to the parameter list of a function.
-    * This way, changes to the implementation that are only of use to the
-    * reporting system, such as the use of a database or an actor to provide the
-    * sequence number, will be as low-impact as possible, although it isn't
-    * completely invisible.
-    *
-    * @param value
-    *   The value to be lifted into the DataPoint monad.
-    * @param dpa
-    *   The actor used to create the DataPoint.
-    * @param scheduler
-    *   The Apache Pekko scheduler used to coordinate messages, since this
-    *   constructor requires a return message.
-    * @param phase
-    *   The phase in which the point is being generated.
-    * @param parent
-    *   The precedent data that led to the generation of this data point, if
-    *   applicable.
-    * @return
-    *   The DataPoint containing the value, with the metadata provided by the
-    *   implicit parameters and the actor message.
-    */
-  def getActorDataPointBind[A](dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPointBind[A] = {
-    (value) => (phase, actorName, parent) ?=> {
-      implicit val timeout: Timeout = Timeout(3.seconds)
-      //val worker: String = Thread.currentThread().getName
-
-      // Using Inf because the pekko ask function takes a timeout, and it's specified above.
-      Await.result(
-        dpa.ask[DataPoint[A]](replyTo =>
-          DataPointActor.Create(value, phase, actorName, replyTo, parent)
-        )(using scheduler = scheduler),
-        Duration.Inf
-      )
-    }
-  }
 }
 
 /** This represents a monad that tracks the metadata containing the
-  * environmental conditions when the point was generated. This implements the
-  * "bind" function of the monad, and the companion object's apply method should
-  * be used as the "unit" function. (Translation: this constructor is for
-  * testing purposes only and may be made private to the package in future. Use
-  * DataPoint(...), not new DataPoint(...))
   *
   * @param sequenceNumber
-  *   The sequence number that this data point was recorded. I am interesting in
-  *   what order all of the points were created in across the different threads.
+  *   The sequence number that this data point was recorded. I am interested in
+  *   environmental conditions when the point was generated. To create one of
+  *   these objects, use one of the "unit" functions provided by the DataPoint
+  *   companion object. what order all of the points were created in across the
+  *   different threads.
   * @param timestamp
   *   The time at which the data point was created.
   * @param actorName
@@ -112,7 +50,11 @@ class DataPoint[A](
     f(value)
   }
 
-  def map[B](f: A => B)(implicit dpb: DataPoint.DataPointBind[B], phase: DataPoint.Phase, actorName: String): DataPoint[B] = {
+  def map[B](f: A => B)(implicit
+      dpb: DataPoint.DataPointUnit[B],
+      phase: DataPoint.Phase,
+      actorName: String
+  ): DataPoint[B] = {
     given Option[DataPoint[?]] = Some(this)
     dpb(
       f(value)

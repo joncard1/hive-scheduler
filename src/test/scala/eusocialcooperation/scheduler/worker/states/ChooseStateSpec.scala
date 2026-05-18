@@ -51,8 +51,8 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         (config.getDouble).expects(ExploiterState.fuzzinessConfigKey).returning(0.01).anyNumberOfTimes()
         (config.getDouble).expects(ExploiterState.incrementConfigKey).returning(0.001).anyNumberOfTimes()
 
-        given sampleBind: DataPoint.DataPointBind[Sample] = mock[DataPoint.DataPointBind[Sample]]
-        given pointBind: DataPoint.DataPointBind[Point] = mock[DataPoint.DataPointBind[Point]]
+        given sampleUnit: DataPoint.DataPointUnit[Sample] = mock[DataPoint.DataPointUnit[Sample]]
+        given pointUnit: DataPoint.DataPointUnit[Point] = mock[DataPoint.DataPointUnit[Point]]
         given actorName: String = "workername"
 
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
@@ -90,8 +90,8 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         (config.getDouble).expects(ExplorerState.explorationRadiusConfigKey).returning(explorationRadius).atLeastOnce()
         (config.getDouble).expects(ExplorerState.thresholdConfigKey).returning(threshold).atLeastOnce()
 
-        given sampleBind: DataPoint.DataPointBind[Sample] = mock[DataPoint.DataPointBind[Sample]]
-        given pointBind: DataPoint.DataPointBind[Point] = mock[DataPoint.DataPointBind[Point]]
+        given sampleUnit: DataPoint.DataPointUnit[Sample] = mock[DataPoint.DataPointUnit[Sample]]
+        given pointUnit: DataPoint.DataPointUnit[Point] = mock[DataPoint.DataPointUnit[Point]]
         given actorName: String = "workername"
 
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
