@@ -224,7 +224,9 @@ object Demo extends LoggingComponent {
     val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
     val headless = effectiveHeadless(requestedHeadless, runs, experimentPath)
 
-    var outputPath = namedParameters.get("outputPath")
+    val outputPath = namedParameters.get("outputPath").map { path =>
+      if path.nonEmpty && !path.endsWith("/") then s"$path/" else path
+    }
     CommandLineParams(experimentPath, experimentsPath, runs, headless, parentPath, outputPath)
   }
 
