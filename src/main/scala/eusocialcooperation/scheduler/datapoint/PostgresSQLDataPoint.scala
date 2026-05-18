@@ -11,9 +11,9 @@ import slick.jdbc.PostgresProfile.api._
 
 object PostgresSQLDataPoint {
 
-  val metadataTable = TableQuery[MetadataTable]
-  val sampleTable = TableQuery[SampleTable]
-  val prospectTable = TableQuery[ProspectTable]
+  val metadataTable = TableQuery[PostgresMetadataTable]
+  val sampleTable = TableQuery[PostgresSampleTable]
+  val prospectTable = TableQuery[PostgresProspectTable]
   
   def getDBProspectUnit(run: Int, experimentName: String, db: Database)(using ec: ExecutionContext): DataPoint.DataPointUnit[Point] = {
     Await.result(db.run(DBIO.seq(

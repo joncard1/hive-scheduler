@@ -29,9 +29,9 @@ class DataPointITSpec
       Await.result(
         db.run(
           DBIO.seq(
-            TableQuery[SampleTable].schema.dropIfExists,
-            TableQuery[MetadataTable].schema.dropIfExists,
-            TableQuery[ProspectTable].schema.dropIfExists
+            TableQuery[PostgresSampleTable].schema.dropIfExists,
+            TableQuery[PostgresMetadataTable].schema.dropIfExists,
+            TableQuery[PostgresProspectTable].schema.dropIfExists
           )
         ),
         2.seconds
@@ -46,9 +46,9 @@ class DataPointITSpec
       Await.result(
         db.run(
           DBIO.seq(
-            TableQuery[SampleTable].schema.dropIfExists,
-            TableQuery[MetadataTable].schema.dropIfExists,
-            TableQuery[ProspectTable].schema.dropIfExists
+            TableQuery[PostgresSampleTable].schema.dropIfExists,
+            TableQuery[PostgresMetadataTable].schema.dropIfExists,
+            TableQuery[PostgresProspectTable].schema.dropIfExists
           )
         ),
         2.seconds

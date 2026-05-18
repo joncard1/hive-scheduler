@@ -2,7 +2,7 @@ package eusocialcooperation.scheduler.datapoint
 
 import slick.jdbc.PostgresProfile.api._
 
-class MetadataTable(tag: Tag)
+class PostgresMetadataTable(tag: Tag)
     extends Table[
       (Long, Int, String, String, Long, String, String, Option[Long])
     ](tag, "metadata") {
@@ -30,27 +30,27 @@ class MetadataTable(tag: Tag)
   )
 }
 
-class SampleTable(tag: Tag)
-    extends Table[(Long, Int, String, Double, Double, Double)](tag, "points") {
+class PostgresSampleTable(tag: Tag)
+    extends Table[(Long, Int, String, BigDecimal, BigDecimal, BigDecimal)](tag, "points") {
   def sequenceNumber = column[Long]("sequence_number", O.AutoInc)
   def run = column[Int]("run")
   def experimentName = column[String]("experiment_name")
-  def x = column[Double]("x")
-  def y = column[Double]("y")
-  def z = column[Double]("z")
+  def x = column[BigDecimal]("x")
+  def y = column[BigDecimal]("y")
+  def z = column[BigDecimal]("z")
 
   def pk = primaryKey("pk_points", (sequenceNumber, run, experimentName))
 
   override def * = (sequenceNumber, run, experimentName, x, y, z)
 }
 
-class ProspectTable(tag: Tag)
-    extends Table[(Long, Int, String, Double, Double)](tag, "prospects") {
+class PostgresProspectTable(tag: Tag)
+    extends Table[(Long, Int, String, BigDecimal, BigDecimal)](tag, "prospects") {
   def sequenceNumber = column[Long]("sequence_number", O.AutoInc)
   def run = column[Int]("run")
   def experimentName = column[String]("experiment_name")
-  def x = column[Double]("x")
-  def y = column[Double]("y")
+  def x = column[BigDecimal]("x")
+  def y = column[BigDecimal]("y")
 
   def pk = primaryKey("pk_prospects", (sequenceNumber, run, experimentName))
 
