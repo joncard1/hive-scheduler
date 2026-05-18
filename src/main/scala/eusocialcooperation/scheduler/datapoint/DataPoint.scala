@@ -8,17 +8,13 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
 import org.apache.pekko.actor.typed.Scheduler
 import scala.concurrent.duration.Duration
-import scala.reflect.ClassTag
-import eusocialcooperation.scheduler.Sample
-import scala.concurrent.ExecutionContext
-import eusocialcooperation.scheduler.Point
 
 /** The companion object to DataPoint, which provides the "unit" operation of
   * the monad.
   */
 object DataPoint {
 
-  type DataPointBind[A] = (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
+  type DataPointUnit[A] = (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
 
   /** An enum to designate the phases in which a DataPoint can be generated.
     */
@@ -28,7 +24,7 @@ object DataPoint {
 
 /** This represents a monad that tracks the metadata containing the
   * environmental conditions when the point was generated. This implements the
-  * "bind" function of the monad, and the companion object's apply method should
+  * "unit" function of the monad, and the companion object's apply method should
   * be used as the "unit" function. (Translation: this constructor is for
   * testing purposes only and may be made private to the package in future. Use
   * DataPoint(...), not new DataPoint(...))
@@ -64,7 +60,7 @@ class DataPoint[A](
     f(value)
   }
 
-  def map[B](f: A => B)(implicit dpb: DataPoint.DataPointBind[B], phase: DataPoint.Phase, actorName: String): DataPoint[B] = {
+  def map[B](f: A => B)(implicit dpb: DataPoint.DataPointUnit[B], phase: DataPoint.Phase, actorName: String): DataPoint[B] = {
     given Option[DataPoint[?]] = Some(this)
     dpb(
       f(value)

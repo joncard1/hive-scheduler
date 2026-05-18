@@ -1,9 +1,6 @@
 package eusocialcooperation.scheduler.datapoint
 
 import slick.jdbc.PostgresProfile.api._
-import slick.lifted.PrimaryKey
-import slick.lifted.Shape
-import slick.lifted.ProvenShape
 
 class MetadataTable(tag: Tag)
     extends Table[

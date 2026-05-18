@@ -11,11 +11,11 @@ import java.io.FileOutputStream
 import eusocialcooperation.scheduler.datapoint.DataPoint
 
 object DefaultArchiver {
-  private[archiver] def constructWriter(path: String): PrintWriter = {
+  private[archiver] def constructWriter(path: String, append: Boolean = false): PrintWriter = {
     new PrintWriter(
       new BufferedWriter(
         new OutputStreamWriter(
-          new FileOutputStream(path)
+          new FileOutputStream(path, append)
         )
       )
     )
@@ -39,7 +39,7 @@ class DefaultArchiver private[archiver] (
       () => DefaultArchiver.constructWriter(s"$experimentPath/pointsData.csv"),
       () => DefaultArchiver.constructWriter(s"$experimentPath/prospectsData.csv"),
       () => DefaultArchiver.constructWriter(s"$experimentPath/queueLengths.csv"),
-      () => DefaultArchiver.constructWriter(s"$experimentPath/metadata.csv")
+      () => DefaultArchiver.constructWriter(s"$experimentPath/metadata.csv", true)
     )
   }
 

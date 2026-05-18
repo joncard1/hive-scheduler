@@ -163,7 +163,7 @@ object Worker {
       ActorRef[Dispatcher.Command],
       BigDecimal,
       AtomicBoolean
-  ) => (config: Config, context: ActorContext[Command], dpaSample: DataPoint.DataPointBind[Sample], dpaPoint: DataPoint.DataPointBind[Point], mdc: Map[String, String]) ?=> Future[Unit]
+  ) => (config: Config, context: ActorContext[Command], dpaSample: DataPoint.DataPointUnit[Sample], dpaPoint: DataPoint.DataPointUnit[Point], mdc: Map[String, String]) ?=> Future[Unit]
 
   // TODO: Not sure I like doing this with Future instead of Thread. It's probably more efficient, generally, but I think it's confusing the traceability of the workers. I suspect I'd have to add another environment parameter for the worker name, because the Futures are being run on the same threads.
   def defaultWorkerThreadFactory(
@@ -174,8 +174,8 @@ object Worker {
   )(implicit
       config: Config,
       context: ActorContext[Command],
-      sampleBind: DataPoint.DataPointBind[Sample],
-      pointBind: DataPoint.DataPointBind[Point],
+      sampleUnit: DataPoint.DataPointUnit[Sample],
+      pointUnit: DataPoint.DataPointUnit[Point],
       mdc: Map[String, String]
   ) = {
     import context.executionContext
@@ -195,8 +195,8 @@ object Worker {
           dispatcher
         )
         while (running.get()) {
-          implicit val dpSampleActor: DataPoint.DataPointBind[Sample] = sampleBind
-          implicit val dpPointActor: DataPoint.DataPointBind[Point] = pointBind
+          implicit val dpSampleUnit: DataPoint.DataPointUnit[Sample] = sampleUnit
+          implicit val dpPointUnit: DataPoint.DataPointUnit[Point] = pointUnit
           implicit val actorName: String = context.self.path.name
           phase = phase()
         }
@@ -235,8 +235,8 @@ object Worker {
       kernelFn: KernelFn,
       dispatcher: ActorRef[Dispatcher.Command],
       workerThreadFactory: WorkerThreadFactory,
-      sampleActor: Option[DataPoint.DataPointBind[Sample]] = None,
-      pointActor: Option[DataPoint.DataPointBind[Point]] = None
+      sampleActor: Option[DataPoint.DataPointUnit[Sample]] = None,
+      pointActor: Option[DataPoint.DataPointUnit[Point]] = None
   )(implicit
       context: ActorContext[Command],
       config: Config,
@@ -249,14 +249,14 @@ object Worker {
         def createNextState(
             kernelFn: KernelFn,
             dispatcher: ActorRef[Dispatcher.Command],
-            sampleActor: Option[DataPoint.DataPointBind[Sample]],
-            pointActor: Option[DataPoint.DataPointBind[Point]]
+            sampleActor: Option[DataPoint.DataPointUnit[Sample]],
+            pointActor: Option[DataPoint.DataPointUnit[Point]]
         ) = {
           if (sampleActor.isDefined && pointActor.isDefined) {
             given Scheduler = context.system.scheduler
             given ExecutionContext = context.system.executionContext
-            given dpaSample: DataPoint.DataPointBind[Sample] = sampleActor.get
-            given dpaPoint: DataPoint.DataPointBind[Point] = pointActor.get
+            given dpaSample: DataPoint.DataPointUnit[Sample] = sampleActor.get
+            given dpaPoint: DataPoint.DataPointUnit[Point] = pointActor.get
 
             // context.log.info(s"Worker ${context.self.path.name} found DataPointActor and is starting.")
             val running = new AtomicBoolean(true)
@@ -291,7 +291,7 @@ object Worker {
               kernelFn,
               dispatcher,
               Option(
-                PekkoDataPoint.getActorDataPointBind(
+                PekkoDataPoint.getActorDataPointUnit(
                   actors
                     .serviceInstances(DataPointActor.DataPointActorKey[Sample])
                     .head,
@@ -311,7 +311,7 @@ object Worker {
               dispatcher,
               sampleActor,
               Option(
-                PekkoDataPoint.getActorDataPointBind(
+                PekkoDataPoint.getActorDataPointUnit(
                   actors
                     .serviceInstances(DataPointActor.DataPointActorKey[Point])
                     .head,
@@ -369,8 +369,8 @@ object Worker {
   private def active(
       running: AtomicBoolean,
       thread: Future[Unit],
-      sampleActorRef: DataPoint.DataPointBind[Sample],
-      pointActorRef: DataPoint.DataPointBind[Point]
+      sampleActorRef: DataPoint.DataPointUnit[Sample],
+      pointActorRef: DataPoint.DataPointUnit[Point]
   )(implicit
       context: ActorContext[Command],
       config: Config
@@ -397,7 +397,7 @@ object Worker {
         active(
           running,
           thread,
-          PekkoDataPoint.getActorDataPointBind(
+          PekkoDataPoint.getActorDataPointUnit(
             actors
               .serviceInstances(DataPointActor.DataPointActorKey[Sample])
               .head,
@@ -413,7 +413,7 @@ object Worker {
           running,
           thread,
           sampleActorRef,
-          PekkoDataPoint.getActorDataPointBind(
+          PekkoDataPoint.getActorDataPointUnit(
             actors
               .serviceInstances(DataPointActor.DataPointActorKey[Point])
               .head,

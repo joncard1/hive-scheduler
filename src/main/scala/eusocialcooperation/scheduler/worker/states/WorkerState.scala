@@ -34,10 +34,10 @@ trait WorkerState extends LoggingComponent {
   /** Execute the proper behavior for this state. The state returned is the next
     * state the worker should be in.
     *
-    * @param sampleBind 
-    *   A function to act as the bind operation for DataPoint[Sample].
-    * @param pointBind
-    *   A function to act as the bind operation for DataPoint[Point].
+    * @param sampleUnit 
+    *   A function to act as the unit operation for DataPoint[Sample].
+    * @param pointUnit
+    *   A function to act as the unit operation for DataPoint[Point].
     * @param actorName
     *   The name of the thread, actor, or other key used to identify which worker created a DataPoint.
     * @param scheduler
@@ -48,8 +48,8 @@ trait WorkerState extends LoggingComponent {
     *   this state.
     */
   def apply()(using
-      DataPoint.DataPointBind[Sample],
-      DataPoint.DataPointBind[Point],
+      DataPoint.DataPointUnit[Sample],
+      DataPoint.DataPointUnit[Point],
       String,
       Scheduler
   ): WorkerState

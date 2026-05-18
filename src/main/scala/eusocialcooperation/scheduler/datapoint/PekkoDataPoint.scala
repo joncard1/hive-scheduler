@@ -24,7 +24,7 @@ object PekkoDataPoint {
     * changes to the rest of the algorithm to keep up with them, slowing
     * development and confusing the human reader. Instead, the compiler should
     * be able to adapt to additions or subtractions from the list of implicit
-    * parameters with only the occaisional addition of a "given" in the code
+    * parameters with only the occasional addition of a "given" in the code
     * that is easier to ignore than changes to the parameter list of a function.
     * This way, changes to the implementation that are only of use to the
     * reporting system, such as the use of a database or an actor to provide the
@@ -47,7 +47,7 @@ object PekkoDataPoint {
     *   The DataPoint containing the value, with the metadata provided by the
     *   implicit parameters and the actor message.
     */
-  def getActorDataPointBind[A](dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPoint.DataPointBind[A] = {
+  def getActorDataPointUnit[A](dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPoint.DataPointUnit[A] = {
     (value) => (phase, actorName, parent) ?=> {
       implicit val timeout: Timeout = Timeout(3.seconds)
       //val worker: String = Thread.currentThread().getName
