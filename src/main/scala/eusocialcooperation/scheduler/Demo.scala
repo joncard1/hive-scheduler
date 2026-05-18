@@ -64,7 +64,8 @@ object Demo extends LoggingComponent {
       experimentsPath: Option[String],
       runs: Int,
       headless: Boolean,
-      parentPath: Option[String]
+      parentPath: Option[String],
+      specifiedOutputPath: Option[String]
   )
 
   private[scheduler] val durationConfigKey = "duration"
@@ -107,11 +108,18 @@ object Demo extends LoggingComponent {
     }
   }
 
-  def runOutputPath(experimentPath: String, runNumber: Int, runs: Int): String = {
+  def runOutputPath(params: CommandLineParams, runNumber: Int): String = {
+    require(params.experimentPath.isDefined, "The method runOutputPath requires an experimentPath be set. If one was not provided by the command-line, a copy of CommandLineParams with the path set should have been provided by the caller.")
+    val experimentPath = params.experimentPath.get
+    val runs = params.runs
+    val specifiedOutputPath = params.specifiedOutputPath
+    val pathPrefix = specifiedOutputPath.fold(experimentPath)(sp => {
+      params.experimentsPath.fold(s"${sp}")(ep => s"${sp}${experimentPath.replaceAllLiterally(ep, "")}")
+    })
     if (runs > 1) {
-      s"${experimentPath}run_${runNumber.formatted("%03d")}/"
+      s"${pathPrefix}run_${runNumber.formatted("%03d")}/"
     } else {
-      experimentPath
+      pathPrefix
     }
   }
 
@@ -216,7 +224,10 @@ object Demo extends LoggingComponent {
     val requestedHeadless = namedParameters.get("headless").exists(_.toBoolean)
     val headless = effectiveHeadless(requestedHeadless, runs, experimentPath)
 
-    CommandLineParams(experimentPath, experimentsPath, runs, headless, parentPath)
+    val outputPath = namedParameters.get("outputPath").map { path =>
+      if path.nonEmpty && !path.endsWith("/") then s"$path/" else path
+    }
+    CommandLineParams(experimentPath, experimentsPath, runs, headless, parentPath, outputPath)
   }
 
   /** Loads the experiment configuration for the given parameters.
@@ -358,7 +369,7 @@ object Demo extends LoggingComponent {
       def runSingleExperiment(runNumber: Int): Unit = {
         // TODO: Double-check this
         val outputPath =
-          runOutputPath(params.experimentPath.get, runNumber, params.runs)
+          runOutputPath(params, runNumber)
         new java.io.File(outputPath).mkdirs()
         new java.io.File(s"${outputPath}logs").mkdirs()
         // TODO: This is side-effect-ful. It correctly sets the MDC for the current thread, but it clears out the prior value.

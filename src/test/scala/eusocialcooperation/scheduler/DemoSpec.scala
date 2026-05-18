@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.OptionValues
 import java.io.File
+import eusocialcooperation.scheduler.Demo.CommandLineParams
 
 class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
 
@@ -30,11 +31,33 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
   }
 
   test("runOutputPath uses root experiment path for single run") {
-    Demo.runOutputPath("experiments/simple/", 1, 1) shouldEqual "experiments/simple/"
+    val params = CommandLineParams(Some("experiments/simple/"), None, 1, headless = true, None, None)
+    Demo.runOutputPath(params, 1) `shouldEqual` "experiments/simple/"
   }
 
   test("runOutputPath uses zero-padded subfolder for multi-run") {
-    Demo.runOutputPath("experiments/simple/", 2, 3) shouldEqual "experiments/simple/run_002/"
+    val params = CommandLineParams(Some("experiments/simple/"), None, 3, headless = true, None, None)
+    Demo.runOutputPath(params, 2) `shouldEqual` "experiments/simple/run_002/"
+  }
+
+  test("runOutputPath uses specified output path when provided") {
+    val params = CommandLineParams(Some("experiments/simple/"), None, 1, headless = true, None, Some("custom/output/"))
+    Demo.runOutputPath(params, 1) `shouldEqual` "custom/output/"
+  }
+
+  test("runOutputPath uses specified output path when provided for multi-run") {
+    val params = CommandLineParams(Some("experiments/simple/"), None, 3, headless = true, None, Some("custom/output/"))
+    Demo.runOutputPath(params, 1) `shouldEqual` "custom/output/run_001/"
+  }
+
+  test("runOutputPath uses specified output path when provided with experimentsPath") {
+    val params = CommandLineParams(Some("experiments/simple/"), Some("experiments/"), 1, headless = true, None, Some("custom/output/"))
+    Demo.runOutputPath(params, 1) `shouldEqual` "custom/output/simple/"
+  }
+
+  test("runOutputPath uses specified output path when provided for multi-run with experimentsPath") {
+    val params = CommandLineParams(Some("experiments/simple/"), Some("experiments/"), 3, headless = true, None, Some("custom/output/"))
+    Demo.runOutputPath(params, 1) `shouldEqual` "custom/output/simple/run_001/"
   }
 
   // TODO: runOutputPath should be --experimentsPath/<a folder> when --experimentsPath is set and --runs == 1
@@ -197,7 +220,7 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
   // ── CommandLineParams case class ────────────────────────────────────────────
 
   test("CommandLineParams stores all fields correctly") {
-    val params = Demo.CommandLineParams(Some("testconf/"), None, 2, true, Some("testconf/"))
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 2, true, Some("testconf/"), None)
     params.experimentPath.value `shouldBe` ("testconf/")
     params.runs shouldEqual 2
     params.headless shouldEqual true
@@ -205,28 +228,28 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
   }
 
   test("CommandLineParams supports structural equality") {
-    val p1 = Demo.CommandLineParams(Some("testconf/"), None, 1, false, None)
-    val p2 = Demo.CommandLineParams(Some("testconf/"), None, 1, false, None)
+    val p1 = Demo.CommandLineParams(Some("testconf/"), None, 1, false, None, None)
+    val p2 = Demo.CommandLineParams(Some("testconf/"), None, 1, false, None, None)
     p1 shouldEqual p2
   }
 
   // ── loadConfig ──────────────────────────────────────────────────────────────
 
   test("loadConfig loads configuration from testconf/") {
-    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None)
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None, None)
     val config = Demo.loadConfig(params)
     config should not be null
     config.hasPath("duration") shouldEqual true
   }
 
   test("loadConfig reads duration from testconf/") {
-    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None)
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None, None)
     val config = Demo.loadConfig(params)
     config.getDuration("duration").toMillis shouldEqual 10000L
   }
 
   test("loadConfig loads the default configuration from classpath") {
-    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None)
+    val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None, None)
     val config = Demo.loadConfig(params)
     config.hasPath("testkey") shouldEqual true
     config.getString("testkey") shouldEqual "testvalue"
