@@ -30,6 +30,7 @@
     <logger name="eusocialcooperation" level="trace">
         <appender-ref ref="SIFT"/>
     </logger>
+    <logger name="slick" level="warn" />
 
     <root level="warn">
         <appender-ref ref="CONSOLE"/>

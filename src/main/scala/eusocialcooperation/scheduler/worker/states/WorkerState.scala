@@ -1,19 +1,11 @@
 package eusocialcooperation.scheduler.worker.states
 
 import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.AskPattern._
 
-import scala.util.Random
-import scala.concurrent.Future
-import scala.concurrent.Await
-import org.apache.pekko.util.Timeout
-import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.Scheduler
-import org.apache.pekko.actor.typed.scaladsl.ActorContext
 import eusocialcooperation.scheduler._
-import com.typesafe.config.Config
-import eusocialcooperation.scheduler.datapoint.DataPointActor
 import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler.dispatcher.Dispatcher
 
 /** The state a worker thread can be in as it performs its work. The worker
   * thread represents each agent in the algorithm and it can transition between

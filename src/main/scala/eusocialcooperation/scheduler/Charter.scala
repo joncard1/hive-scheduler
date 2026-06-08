@@ -1,17 +1,5 @@
 package eusocialcooperation.scheduler
 
-//import org.jzy3d.chart.Chart
-//import org.jzy3d.chart.factories.IChartFactory
-//import org.jzy3d.plot3d.primitives.Scatter
-//import org.jzy3d.maths.Coord3d
-//import org.jzy3d.maths.Coord2d
-//import org.jzy3d.plot2d.primitives.ScatterSerie2d
-//import org.jzy3d.maths.Coord2d
-//import org.jzy3d.plot2d.primitives.ScatterPointSerie2d
-import scala.collection.JavaConverters._
-//import org.jzy3d.colors.colormaps.ColorMapGrayscale
-//import org.jzy3d.colors.Color
-import scalafx.scene.Node
 import org.jfree.chart3d.Chart3D
 import org.jfree.chart.JFreeChart
 import eusocialcooperation.scheduler.datapoint.DataPoint

@@ -239,19 +239,19 @@ class DemoSpec extends AnyFunSuite with Matchers with OptionValues {
     val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None, None)
     val config = Demo.loadConfig(params)
     config should not be null
-    config.hasPath("duration") shouldEqual true
+    config.hasPath("eusocialcooperation.scheduler.duration") shouldEqual true
   }
 
   test("loadConfig reads duration from testconf/") {
     val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None, None)
     val config = Demo.loadConfig(params)
-    config.getDuration("duration").toMillis shouldEqual 10000L
+    config.getDuration("eusocialcooperation.scheduler.duration").toMillis shouldEqual 10000L
   }
 
   test("loadConfig loads the default configuration from classpath") {
     val params = Demo.CommandLineParams(Some("testconf/"), None, 1, headless = true, None, None)
     val config = Demo.loadConfig(params)
-    config.hasPath("testkey") shouldEqual true
-    config.getString("testkey") shouldEqual "testvalue"
+    config.hasPath("eusocialcooperation.scheduler.testkey") shouldEqual true
+    config.getString("eusocialcooperation.scheduler.testkey") shouldEqual "testvalue"
   }
 }

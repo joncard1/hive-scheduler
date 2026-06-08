@@ -1,5 +1,7 @@
 package eusocialcooperation
 
+import eusocialcooperation.scheduler.datapoint.DataPoint
+
 package object scheduler {
 
   /** The hard-coded file name containing the experiment configuration.
@@ -27,4 +29,6 @@ package object scheduler {
   /** Type alias for a sample, which consists of a 3D point.
     */
   type Sample = (BigDecimal, BigDecimal, BigDecimal)
+  // TODO: This actually was never used, or never required. Review for whether it should just be removed.
+  class DataPointS(sequenceNumber: Long, timestamp: Long, actorName: String, phase: DataPoint.Phase, value: Sample, parent: Option[DataPoint[?]] = None) extends DataPoint[Sample](sequenceNumber, timestamp, actorName, phase, value, parent)
 }

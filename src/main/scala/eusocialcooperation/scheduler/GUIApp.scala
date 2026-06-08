@@ -7,6 +7,8 @@ import javafx.scene.{layout => jfxl}
 import scalafx.scene.Scene
 import scalafx.scene.layout.GridPane
 import scalafx.stage.Stage
+import eusocialcooperation.scheduler.processor.DefaultProcessor
+import scala.concurrent.Future
 
 /** JavaFX application class responsible for initialising and displaying the
   * primary stage.
@@ -23,6 +25,8 @@ import scalafx.stage.Stage
   * any in-progress actor system.
   */
 class GUIApp extends Application with LoggingComponent {
+
+  var processor: Option[DefaultProcessor] = None
 
   /** Initialises the primary stage and starts the experiment processing thread.
     *
@@ -64,7 +68,15 @@ class GUIApp extends Application with LoggingComponent {
 
     // Launches the experiment on a background Future; cannot run on this JavaFX
     // application thread or it would block the window from appearing.
-    Demo.runExperiment(params, appConfig, controller)
+    val processor = Some(new DefaultProcessor(Demo.mdcKey, controller))
+    Future {
+      processor.get.runExperiment(params, appConfig)
+    }.andThen {
+      case scala.util.Failure(exception) =>
+        // TODO: Reminder; I'm not sure if this will work correctly, because I'm not sure if the error in the last position will be interpreted correctly when the format only has one substitution. And I'm not sure how to test it.
+        logger.error("Error in the latest run of {}", params.experimentPath.get, exception)
+    }
+
   }
 
   /** Cancels the current experiment actor system if it is still running.
@@ -74,6 +86,10 @@ class GUIApp extends Application with LoggingComponent {
     * `Platform.implicitExit` is `true`).
     */
   override def stop(): Unit = {
-    Demo.cancelCurrentExperiment()
+    processor match {
+      case None =>
+      case Some(processor) =>
+        processor.cancelCurrentExperiment()
+    }
   }
 }

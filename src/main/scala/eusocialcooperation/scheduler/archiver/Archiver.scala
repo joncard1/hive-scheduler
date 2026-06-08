@@ -1,11 +1,10 @@
 package eusocialcooperation.scheduler.archiver
 
 import eusocialcooperation.scheduler._
-import com.typesafe.config.Config
 import eusocialcooperation.scheduler.datapoint.DataPoint
 
 object Archiver {
-  def apply(experimentPath: String)/*(implicit config: Config)*/: Archiver = new DefaultArchiver(experimentPath)
+  def apply(experimentPath: String): Archiver = new DefaultArchiver(experimentPath)
 }
 
 trait Archiver {

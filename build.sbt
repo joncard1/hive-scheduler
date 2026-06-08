@@ -4,18 +4,25 @@ ThisBuild / scalaVersion     := "3.7.4"
 ThisBuild / version          := "0.1.0-SNAPSHOT"
 ThisBuild / organization     := "eusocialcooperation.scheduler"
 ThisBuild / organizationName := "Eusocial Cooperation"
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 val slickVersion = "3.6.1"
 
 lazy val root = (project in file("."))
+  .configs(MultiJvm)
   .settings(
     resolvers += ("jzy3d" at "http://maven.jzy3d.org/releases").withAllowInsecureProtocol(true),
     name := "hive-scheduler",
-    coverageExcludedPackages := "eusocialcooperation\\.scheduler\\.datapoint\\.MetadataTable;eusocialcooperation\\.scheduler\\.datapoint\\.SampleTable;eusocialcooperation\\.scheduler\\.datapoint\\.ProspectTable;eusocialcooperation\\.scheduler\\.datapoint\\.PostgresSQLDataPoint;eusocialcooperation\\.scheduler\\.GUIApp;eusocialcooperation\\.scheduler\\.charter\\.JFreeCharter;eusocialcooperation\\.scheduler\\.MainLayoutController",
+    coverageExcludedPackages := "eusocialcooperation\\.scheduler\\.processor\\.*;eusocialcooperation\\.scheduler\\.datapoint\\.Postgres.*;eusocialcooperation\\.scheduler\\.dispatcher\\.ClusterDispatcher;eusocialcooperation\\.scheduler\\.GUIApp;eusocialcooperation\\.scheduler\\.charter\\.JFreeCharter;eusocialcooperation\\.scheduler\\.MainLayoutController",
     libraryDependencies ++= Seq(
       scalatest % Test
       , pekkoActor
+      , pekkoCluster
       , pekkoStream
+      , pekkoDiscovery
+      , pekkoSerialization
+      , pekkoManagement
       , "ch.qos.logback" % "logback-classic" % "1.5.32"
       , "com.typesafe" % "config" % "1.4.3"
       , "org.scalafx" %% "scalafx" % "25.0.2-R37"
@@ -27,9 +34,16 @@ lazy val root = (project in file("."))
       , "com.typesafe.slick" %% "slick" % slickVersion
       , pekkoActorTestkit % Test
       , scalamock % Test
+      , pekkoMultiNodeTesting
     )
+    , scalacOptions += {
+     if (scalaVersion.value.startsWith("2.12"))
+       "-Ywarn-unused-import"
+     else
+       "-Wunused:imports"
+   },
   )
-  .enablePlugins(DockerPlugin, AssemblyPlugin)
+  .enablePlugins(DockerPlugin, AssemblyPlugin, MultiJvmPlugin)
 
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", "services", _*) => MergeStrategy.concat
@@ -37,6 +51,7 @@ assembly / assemblyMergeStrategy := {
   case PathList("reference.conf") => MergeStrategy.concat
   case _                        => MergeStrategy.first
 }
+Test / unmanagedSourceDirectories += (ThisBuild / baseDirectory).value / "src" / "multi-jvm" / "scala"
 
 lazy val it = (project in file("it"))
   .settings(
@@ -46,9 +61,10 @@ lazy val it = (project in file("it"))
       , "com.typesafe.slick" %% "slick-hikaricp" % slickVersion % Test
       , "com.typesafe.slick" %% "slick" % slickVersion % Test
       , "org.postgresql" % "postgresql" % "42.5.0" % Test
+      , pekkoActorTestkit % Test
     )
   )
-  .dependsOn(root)
+  .dependsOn(root % "test->test;compile->compile")
 
 // Docker configuration
 

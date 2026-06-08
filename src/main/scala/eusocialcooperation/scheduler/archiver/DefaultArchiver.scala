@@ -1,7 +1,6 @@
 package eusocialcooperation.scheduler.archiver
 
 import eusocialcooperation.scheduler._
-import com.typesafe.config.Config
 import scala.util.Using
 import java.io.PrintWriter
 import java.io.Writer

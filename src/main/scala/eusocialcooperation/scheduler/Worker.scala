@@ -1,34 +1,27 @@
 package eusocialcooperation.scheduler
 
 import org.apache.pekko.actor.typed.{ActorRef, Behavior}
-import org.apache.pekko.actor.typed.receptionist.{Receptionist, ServiceKey}
+import org.apache.pekko.actor.typed.receptionist.Receptionist
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Random
 import org.apache.pekko.actor.typed.Scheduler
-import org.apache.pekko.actor.typed.PostStop
 import org.apache.pekko.actor.typed.scaladsl.ActorContext
-import org.apache.pekko.actor.CoordinatedShutdown
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
-import org.apache.pekko.Done
-import org.apache.pekko.util.Timeout
-import scala.concurrent.duration.DurationInt
-import eusocialcooperation.scheduler.datapoint.DataPointActor.DataPointActorKey
 import eusocialcooperation.scheduler.worker.states.{ExplorerState, WorkerState}
 import com.typesafe.config.Config
 import org.apache.pekko.actor.typed.receptionist.Receptionist.Listing
 import eusocialcooperation.scheduler.distributions.DistributionStrategy
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
-import scala.util.Success
-import scala.util.Failure
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import scala.util.Try
 import eusocialcooperation.scheduler.datapoint.DataPointActor
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.datapoint.PekkoDataPoint
+import eusocialcooperation.scheduler.dispatcher.Dispatcher
+import scala.concurrent.duration.FiniteDuration
 
 /** Actor that controls the worker threads.
   */
@@ -71,7 +64,7 @@ object Worker {
     * @param replyTo
     *   The actor to whom to send a message confirming the thread stopped.
     */
-  case class Stop(replyTo: ActorRef[WorkerStopped]) extends Command
+  case class Stop(replyTo: ActorRef[Dispatcher.WorkerStopped]) extends Command
 
   /** A message that confirms to the worker the thread stopped, allowing the
     * actor to send the response to the calling actor that the work has stopped.
@@ -83,10 +76,8 @@ object Worker {
     */
   case class WorkerThreadStopped(
       result: Try[Unit],
-      replyTo: ActorRef[WorkerStopped]
+      replyTo: ActorRef[Dispatcher.WorkerStopped]
   ) extends Command
-
-  case class WorkerStopped(result: Try[Unit])
 
   /** A message containing the listing of actors that create DataPoint monads.
     *
@@ -106,55 +97,91 @@ object Worker {
     * @param kernelFn
     *   The function the workers are exploring.
     * @param dispatcher
-    *   The dispatcher to whom the worker should send prospects and request
+    *   The dispatcher to whom the worker should send prospects and request.
     *   prospects from.
+    * @param duration
+    *   The duration the workers should operate.
     * @param config
     *   The configuration object used to provide configuration parameters.
     * @param mdc
     *   The logging context information that allows the logs to write to the
     *   correct locations.
+    * @param sampleUnit
+    *   The unit operation to lift [[Sample]] objects to DataPoint[Sample]
+    * @param prospectUnit
+    *   The unit operation to lift [[Point]] objects to DataPoint[Point]
     * @return
     *   The actor behavior used by Apache Pekko.
     */
   def apply(
       kernelFn: KernelFn,
-      dispatcher: ActorRef[Dispatcher.Command]
-  )(implicit config: Config, mdc: Map[String, String]): Behavior[Command] = apply(
+      dispatcher: ActorRef[Dispatcher.Command],
+      duration: FiniteDuration
+  )(implicit config: Config
+    , mdc: Map[String, String]
+    , sampleUnit: DataPoint.DataPointUnit[Sample]
+    , prospectUnit: DataPoint.DataPointUnit[Point]
+  ): Behavior[Command] = apply(
     kernelFn,
     dispatcher,
+    duration,
     defaultWorkerThreadFactory
   )
   
-  def apply(
+  /** Constructs a worker to explore the function.
+   * 
+   * This version allows the injection of a testable worker through the worker thread factory.
+    * 
+    *
+    * @param kernelFn
+    *   The function the workers are exploring.
+    * @param dispatcher
+    *   The dispatcher to whom the worker should send prospects and request.
+    *   prospects from.
+    * @param duration
+    *   The duration the workers should operate.
+    * @param workerThreadFactory
+    *   A function to create a worker thread for testing.
+    * @param config
+    *   The configuration object used to provide configuration parameters.
+    * @param mdc
+    *   The logging context information that allows the logs to write to the
+    *   correct locations.
+    * @param sampleUnit
+    *   The unit operation to lift [[Sample]] objects to DataPoint[Sample]
+    * @param prospectUnit
+    *   The unit operation to lift [[Point]] objects to DataPoint[Point]
+    * @return
+    */
+  private[scheduler] def apply(
       kernelFn: KernelFn,
       dispatcher: ActorRef[Dispatcher.Command],
+      duration: FiniteDuration,
       workerThreadFactory: WorkerThreadFactory
-  )(implicit config: Config, mdc: Map[String, String]): Behavior[Command] =
+  )(implicit config: Config
+    , mdc: Map[String, String]
+    , sampleUnit: DataPoint.DataPointUnit[Sample]
+    , prospectUnit: DataPoint.DataPointUnit[Point]
+  ): Behavior[Command] =
     Behaviors.withMdc(mdc)(
-      Behaviors.setup { implicit ctx =>
-        implicit val scheduler: Scheduler = ctx.system.scheduler
+      Behaviors.setup { implicit context =>
+        given Scheduler = context.system.scheduler
+        given ExecutionContext = context.system.executionContext
+        given Config = config.getConfig(workersConfigKey)
 
-        val sampleKey = DataPointActorKey[Sample]
-        val pointKey = DataPointActorKey[Point]
-        ctx.log.debug(s"Worker keys {} and {}", sampleKey, pointKey)
+        val running = new AtomicBoolean(true)
+        val strategy = DistributionStrategy()
+        val preference = strategy()
 
-        // There can only be one adapter from Receptionist.Listing to ActorRef[DataPointActor.Command] (and DataPointActor.Create[A]] has A erased, so it's the same thing), so the listing messages must be differentiated in the receiver.
-        val adapter = ctx.messageAdapter[Receptionist.Listing](listing =>
-          DPActorListing(listing)
+        context.log.trace(
+          "Worker starting thread with preference: {}",
+          preference
         )
-
-        ctx.system.receptionist ! Receptionist.Subscribe(
-          sampleKey,
-          adapter
-        )
-        ctx.system.receptionist ! Receptionist.Subscribe(
-          pointKey,
-          adapter
-        )
-        waitingForDpActors(kernelFn, dispatcher, workerThreadFactory)(using
-          ctx,
-          config.getConfig(Worker.workersConfigKey)
-        )
+        context.scheduleOnce(duration, context.self, Stop(dispatcher))
+        val thread = workerThreadFactory(kernelFn, dispatcher, preference, running) andThen (res => {
+          dispatcher ! Dispatcher.WorkerStopped(context.self, res)
+        })
+        active(running, thread, sampleUnit, prospectUnit)
       }
     )
 
@@ -197,153 +224,16 @@ object Worker {
         while (running.get()) {
           implicit val dpSampleUnit: DataPoint.DataPointUnit[Sample] = sampleUnit
           implicit val dpPointUnit: DataPoint.DataPointUnit[Point] = pointUnit
-          implicit val actorName: String = context.self.path.name
+          implicit val actorName: String = context.self.path.toString
           phase = phase()
         }
       } catch {
         case e: Exception =>
-          logger.error(s"worker ${context.self.path.name} encountered error in worker thread", e)
+          logger.error(s"worker ${context.self.path.toString} encountered error in worker thread", e)
           throw e
       }
     }
   }
-
-  /** Represents the state of the actor in which it has requested a listing of
-    * actors that create DataPoint monads and is waiting for the system to
-    * provide them. The system cannot proceed to the next state until all types
-    * of actors have been supplied, so the references to the actors are Option
-    * and likely to be None.
-    *
-    * @param kernelFn
-    *   The function the workers are exploring.
-    * @param dispatcher
-    *   The dispatcher to whom the worker should send prospects and request
-    *   prospects from.
-    * @param sampleActor
-    *   The DataPoint[Sample] creator, such as is currently known.
-    * @param pointActor
-    *   The DataPoint[Point] creator, such as is currently known.
-    * @param context
-    *   The context in which the actor was created, used to provide access to
-    *   the Apache Pekko system.
-    * @param config
-    *   The configuration used to provide configuration parameters.
-    * @return
-    *   The actor behavior used by Apache Pekko.
-    */
-  private def waitingForDpActors(
-      kernelFn: KernelFn,
-      dispatcher: ActorRef[Dispatcher.Command],
-      workerThreadFactory: WorkerThreadFactory,
-      sampleActor: Option[DataPoint.DataPointUnit[Sample]] = None,
-      pointActor: Option[DataPoint.DataPointUnit[Point]] = None
-  )(implicit
-      context: ActorContext[Command],
-      config: Config,
-      mdc: Map[String, String]
-  ): Behavior[Command] =
-    Behaviors
-      .receiveMessage[Command] { msg =>
-
-        // Provides the next state. Refactored here because it must be run in response to either the incoming listing of DataPoint[Sample] actors or DataPoint[Point] actors.
-        def createNextState(
-            kernelFn: KernelFn,
-            dispatcher: ActorRef[Dispatcher.Command],
-            sampleActor: Option[DataPoint.DataPointUnit[Sample]],
-            pointActor: Option[DataPoint.DataPointUnit[Point]]
-        ) = {
-          if (sampleActor.isDefined && pointActor.isDefined) {
-            given Scheduler = context.system.scheduler
-            given ExecutionContext = context.system.executionContext
-            given dpaSample: DataPoint.DataPointUnit[Sample] = sampleActor.get
-            given dpaPoint: DataPoint.DataPointUnit[Point] = pointActor.get
-
-            // context.log.info(s"Worker ${context.self.path.name} found DataPointActor and is starting.")
-            val running = new AtomicBoolean(true)
-            val strategy = DistributionStrategy()
-            val preference = strategy()
-
-            context.log.trace(
-              "Worker starting thread with preference: {}",
-              preference
-            )
-            val thread = workerThreadFactory(kernelFn, dispatcher, preference, running)
-            active(running, thread, sampleActor.get, pointActor.get)
-          } else {
-            waitingForDpActors(
-              kernelFn,
-              dispatcher,
-              workerThreadFactory,
-              sampleActor,
-              pointActor
-            )
-          }
-        }
-
-        msg match {
-          case DPActorListing(actors)
-              if actors.isForKey(
-                DataPointActor.DataPointActorKey[Sample]
-              ) && actors
-                .serviceInstances(DataPointActor.DataPointActorKey[Sample])
-                .nonEmpty =>
-            createNextState(
-              kernelFn,
-              dispatcher,
-              Option(
-                PekkoDataPoint.getActorDataPointUnit(
-                  actors
-                    .serviceInstances(DataPointActor.DataPointActorKey[Sample])
-                    .head,
-                  context.system.scheduler,
-                )
-              ),
-              pointActor
-            )
-          case DPActorListing(actors)
-              if actors.isForKey(
-                DataPointActor.DataPointActorKey[Point]
-              ) && actors
-                .serviceInstances(DataPointActor.DataPointActorKey[Point])
-                .nonEmpty =>
-            createNextState(
-              kernelFn,
-              dispatcher,
-              sampleActor,
-              Option(
-                PekkoDataPoint.getActorDataPointUnit(
-                  actors
-                    .serviceInstances(DataPointActor.DataPointActorKey[Point])
-                    .head,
-                  context.system.scheduler,
-                )
-              )
-            )
-          case DPActorListing(actors)
-              if actors.isForKey(DataPointActor.DataPointActorKey[Sample]) =>
-            createNextState(kernelFn, dispatcher, None, pointActor)
-          case DPActorListing(actors)
-              if actors.isForKey(DataPointActor.DataPointActorKey[Point]) =>
-            createNextState(kernelFn, dispatcher, sampleActor, None)
-          case Stop(replyTo) =>
-            context.log.info(
-              s"Worker ${context.self.path.name} stopping while waiting for DataPointActors."
-            )
-            replyTo ! WorkerStopped(Success(()))
-            Behaviors.stopped
-          case event =>
-            context.log.warn(
-              s"Worker received unusable $event while waiting for DataPointActor. This might be for an unrecognized actor."
-            )
-            Behaviors.same
-        }
-      }
-      .receiveSignal { case (_, PostStop) =>
-        context.log.info(
-          s"Worker ${context.self.path.name} stopping while waiting for DataPointActor."
-        )
-        Behaviors.same
-      }
 
   /** Represents the principle state in which the actor operates, waiting for
     * instructions to stop the worker thread it manages.
@@ -365,7 +255,6 @@ object Worker {
     * @return
     *   The actor behavior used by Apache Pekko.
     */
-  // TODO: I wonder if sampleActorRef or pointActorRef are worth passing through to this state. It doesn't seem to be needed.
   private def active(
       running: AtomicBoolean,
       thread: Future[Unit],
@@ -388,7 +277,7 @@ object Worker {
         context.log.info(
           s"Worker ${context.self.path.name} stopped successfully."
         )
-        replyTo ! WorkerStopped(result)
+        replyTo ! Dispatcher.WorkerStopped(context.self, result)
         Behaviors.stopped
       case DPActorListing(actors)
           if actors.isForKey(DataPointActor.DataPointActorKey[Sample]) && actors

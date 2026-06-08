@@ -4,31 +4,15 @@ import eusocialcooperation.scheduler.Charter
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.Sample
 import eusocialcooperation.scheduler.Point
-import scalafx.scene.Node
 import org.jfree.chart3d.data.xyz.XYZSeries
-import org.jfree.chart3d.Chart3DFactory
 import org.jfree.chart3d.data.xyz.XYZSeriesCollection
-import org.jfree.chart3d.Chart3DPanel
-import java.awt.Dimension
-import org.jfree.chart3d.graphics3d.swing.DisplayPanel3D
-import org.jfree.chart.fx.ChartCanvas
 import org.jfree.data.xy.XYSeries
 import org.jfree.chart.ChartFactory
 import org.jfree.data.xy.XYSeriesCollection
-import org.jfree.chart.fx.ChartViewer
-import scalafx.scene.layout.Region
-import org.jfree.chart.ChartPanel
-import scalafx.scene.layout.Pane
 import org.jfree.chart3d.Chart3DFactory
-import org.jfree.chart3d.fx.Chart3DViewer
 import org.jfree.chart3d.graphics3d.ViewPoint3D
 import org.jfree.chart3d.Chart3D
 import org.jfree.chart.JFreeChart
-import org.jfree.chart3d.`export`.ExportUtils
-import org.jfree.data.category.CategoryDataset
-import java.awt.geom.Line2D
-import org.jfree.data.category.DefaultCategoryDataset
-import org.jfree.data.statistics.DefaultMultiValueCategoryDataset
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer
 
 /**

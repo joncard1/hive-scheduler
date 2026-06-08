@@ -15,12 +15,13 @@
         </encoder>
     </appender>
 
+    <logger name="com.zaxxer" level="warn" />
 
-    <logger name="eusocialcooperation" level="debug">
+    <logger name="eusocialcooperation" level="trace">
         <appender-ref ref="FILE"/>
     </logger>
 
-    <root level="debug">
+    <root level="warn">
         <appender-ref ref="CONSOLE"/>
     </root>
 

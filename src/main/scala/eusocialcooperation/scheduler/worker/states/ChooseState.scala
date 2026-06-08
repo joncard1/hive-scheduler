@@ -2,10 +2,8 @@ package eusocialcooperation.scheduler.worker.states
 
 import eusocialcooperation.scheduler.LoggingComponent
 import org.apache.pekko.actor.typed.ActorRef
-import eusocialcooperation.scheduler.Dispatcher.Command
 import com.typesafe.config.Config
-import eusocialcooperation.scheduler.Dispatcher
-import eusocialcooperation.scheduler.datapoint.DataPointActor.Create
+import eusocialcooperation.scheduler.dispatcher.Dispatcher
 import eusocialcooperation.scheduler.Point
 import eusocialcooperation.scheduler.Sample
 import org.apache.pekko.actor.typed.Scheduler
@@ -16,7 +14,6 @@ import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import eusocialcooperation.scheduler.datapoint.DataPoint
-import scala.concurrent.Future
 
 /** The state in which the worker chooses its next state and also sleeps for the
   * time configured in {@Worker.loopDelayConfigKey} before making that choice.
@@ -66,8 +63,10 @@ final case class ChooseState(
       preference,
       dispatcher
     )
-    def createExploiter(prospect: DataPoint[Point]): WorkerState =
+    def createExploiter(prospect: DataPoint[Point]): WorkerState = {
+      logger.debug(s"Prospect: ${prospect.toString()}")
       ExploiterState(prospect, preference, kernelFn, dispatcher)
+    }
 
     /** Observe the control variable and compare it to the agent's preference.
       * In this case, the control variable is the queue length of tasks

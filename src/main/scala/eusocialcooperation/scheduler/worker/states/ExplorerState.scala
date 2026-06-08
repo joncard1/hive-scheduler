@@ -2,14 +2,12 @@ package eusocialcooperation.scheduler.worker.states
 
 import eusocialcooperation.scheduler._
 import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.ActorContext
 import org.apache.pekko.actor.typed.Scheduler
 import scala.util.Random
 import eusocialcooperation.scheduler.worker.states.ExplorerState.State
-import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
 import com.typesafe.config.Config
 import eusocialcooperation.scheduler.datapoint.DataPoint
-import eusocialcooperation.scheduler.datapoint.DataPointActor
+import eusocialcooperation.scheduler.dispatcher.Dispatcher
 
 object ExplorerState {
     val numPointsToExploreConfigKey = "explorer.numPointsToExplore"
@@ -41,9 +39,9 @@ case class ExplorerState(
     remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 
     override def apply()(using sampleUnit: DataPoint.DataPointUnit[Sample], pointUnit: DataPoint.DataPointUnit[Point], actorName: String, scheduler: Scheduler): WorkerState = {
-        logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
+        //logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
     
-        var (x, y) = startLocation
+        var Point(x, y) = startLocation
         
         // Explore a certain number of points.
         val result = kernelFn(x, y)
@@ -90,7 +88,7 @@ case class ExplorerState(
         var newMemory = memory
         val newState = state match
             case _ if result < threshold => 
-                logger.info("Found a point below the threshold: {}, adding to memory and continuing to look for more points below the threshold.", result)
+                //logger.info("Found a point below the threshold: {}, adding to memory and continuing to look for more points below the threshold.", result)
                 newMemory = memory + (newPoint)
                 State.LookingForHighValueAfterLow
             case State.LookingForFirstLowValue =>
@@ -101,7 +99,7 @@ case class ExplorerState(
             case State.LookingForHighValueAfterLow =>
                 if (memory.nonEmpty) {
                     memory.fold[Point]((BigDecimal(0.0), BigDecimal(0.0)))((acc, sample) => (acc._1 + sample._1, acc._2 + sample._2)) match {
-                        case (sumX, sumY) =>
+                        case Point(sumX, sumY) =>
                             val numSamples = memory.size
                             val avgX = sumX / numSamples
                             val avgY = sumY / numSamples
@@ -117,16 +115,16 @@ case class ExplorerState(
         // TODO: If in the LookingForHighValueAterLow, maybe just continue exploring until we find a high value
         newState match
             case State.LookingForHighValueAfterLow =>
-                logger.info("New state is still looking, keeping state")
+                //logger.info("New state is still looking, keeping state")
                 this.copy(startLocation = newPoint, remainingSteps = Option(Math.max(0, remainingSteps.get - 1)), state = newState, memory = newMemory)
             case State.NextState => // These two states should be the same, but "|" doesn't work with an "if" clause
-                logger.info("Found a high, moving to another state.")
+                //logger.info("Found a high, moving to another state.")
                 ChooseState(kernelFn, preference, dispatcher)
             case _ if remainingSteps.get <= 0 =>
-                logger.info("Ran out of steps, moving to another state")
+                //logger.info("Ran out of steps, moving to another state")
                 ChooseState(kernelFn, preference, dispatcher)
             case _ =>
-                logger.info("Continuing exploration, decrementing remaining steps")
+                //logger.info("Continuing exploration, decrementing remaining steps")
                 this.copy(startLocation = newPoint, remainingSteps = Option(remainingSteps.get - 1), state = newState, memory = newMemory)
     }
 }

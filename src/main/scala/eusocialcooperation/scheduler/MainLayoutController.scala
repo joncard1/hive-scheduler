@@ -8,24 +8,10 @@ import javafx.fxml.Initializable
 import java.net.URL
 import java.{util => ju}
 import scalafx.beans.property.ObjectProperty
-import ju.concurrent.atomic.AtomicReference
-import org.apache.pekko.actor.typed.ActorSystem
-import scala.concurrent.Await
-import scalafx.beans.property.LongProperty
-import scala.concurrent.duration.FiniteDuration
-import com.typesafe.config.Config
-import scala.concurrent.duration.DurationInt
-import org.apache.pekko.util.Timeout
-import org.apache.pekko.actor.typed.Scheduler
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import scalafx.scene.control.Label
-import scalafx.application.Platform
-import org.jfree.chart.ChartUtils
 import org.jfree.chart3d.fx.Chart3DViewer
 import org.jfree.chart.fx.ChartViewer
 import scalafx.beans.property.StringProperty
-import org.jfree.chart3d.`export`.ExportUtils
-import scalafx.scene.input.KeyCode.J
 import scalafx.beans.binding.Bindings
 import org.jfree.chart3d.Chart3D
 import org.jfree.chart.JFreeChart
