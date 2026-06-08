@@ -8,19 +8,16 @@ import org.scalatest.matchers.should.Matchers
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.util.Timeout
 import scala.concurrent.duration._
-import scala.concurrent.Await
-import scala.concurrent.Promise
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import com.typesafe.config.Config
-import eusocialcooperation.scheduler.Dispatcher
+import eusocialcooperation.scheduler.dispatcher.Dispatcher
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import eusocialcooperation.scheduler.datapoint.DataPoint
-import eusocialcooperation.scheduler.Dispatcher.RequestPoints
-import eusocialcooperation.scheduler.datapoint.DataPointActor
+import eusocialcooperation.scheduler.dispatcher.Dispatcher.RequestPoints
 import eusocialcooperation.scheduler.Sample
 import org.apache.pekko.actor.typed.ActorRef
 import eusocialcooperation.scheduler.Point
 import eusocialcooperation.scheduler.Worker
+import eusocialcooperation.scheduler.DataPointP
 
 class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactory with OptionValues with Matchers {
 
@@ -58,8 +55,8 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
 
         val newProspects = Set(
-            new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPoint(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPointP(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {
@@ -97,8 +94,8 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
 
         val newProspects = Set(
-            new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPoint(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPointP(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {

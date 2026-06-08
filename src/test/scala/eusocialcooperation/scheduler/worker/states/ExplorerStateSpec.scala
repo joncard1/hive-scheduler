@@ -11,19 +11,16 @@ import org.apache.pekko.actor.typed.Scheduler
 import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import eusocialcooperation.scheduler._
-import org.apache.pekko.actor.typed.ActorRef
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.Promise
 import scala.concurrent.Await
 import eusocialcooperation.scheduler.worker.states.ExplorerState.State
-import scala.util.Using
-import scala.util.Try
 import com.typesafe.config.Config
 import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
 import eusocialcooperation.scheduler.datapoint.DataPoint
-import org.scalamock.function.MockFunction4
 import org.scalamock.function.MockFunction1
+import eusocialcooperation.scheduler.dispatcher.Dispatcher
 
 class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory with OptionValues {
     val testKit: ActorTestKit = ActorTestKit()
@@ -166,8 +163,8 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
         val newProspects = Set(
-            new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
 
         given actorName: String = "workername"
