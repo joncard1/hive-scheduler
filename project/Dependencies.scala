@@ -13,8 +13,9 @@ object Dependencies {
   lazy val pekkoSerialization = "org.apache.pekko" %% "pekko-serialization-jackson" % PekkoVersion
   lazy val pekkoDiscovery     = "org.apache.pekko" %% "pekko-discovery" % PekkoVersion
   lazy val pekkoManagement    = "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % PekkoManagementVersion
+  lazy val pekkoK8sDisc       = "org.apache.pekko" %% "pekko-discovery-kubernetes-api" % PekkoManagementVersion
 
   lazy val scalamock = "org.scalamock" %% "scalamock" % scalamockVersion
 
-  lazy val pekkoMultiNodeTesting = "org.apache.pekko" %% "pekko-multi-node-testkit" % PekkoVersion % Test
+  lazy val pekkoMultiNodeTesting = "org.apache.pekko" %% "pekko-multi-node-testkit" % PekkoVersion
 }

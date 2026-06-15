@@ -218,6 +218,7 @@ trait Dispatcher {
   ): Behavior[Dispatcher.Command] = Behaviors.receiveMessage {
     case Dispatcher.StartRun(experimentName, run, duration, replyTo) =>
       // TODO: 
+      ctx.log.debug("Received StartRun for {}, {}", experimentName, run)
       f(ctx, run, experimentName, startWorkers(duration, workerFactory, ctx, replyTo, _, _, appConfig, f))
     case Dispatcher.Stop(replyTo) =>
       ctx.log.debug(s"Dispatcher got message to stop.")

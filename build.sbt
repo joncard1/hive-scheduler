@@ -1,7 +1,6 @@
 import Dependencies._
 
 ThisBuild / scalaVersion     := "3.7.4"
-ThisBuild / version          := "0.1.0-SNAPSHOT"
 ThisBuild / organization     := "eusocialcooperation.scheduler"
 ThisBuild / organizationName := "Eusocial Cooperation"
 ThisBuild / semanticdbEnabled := true
@@ -23,6 +22,7 @@ lazy val root = (project in file("."))
       , pekkoDiscovery
       , pekkoSerialization
       , pekkoManagement
+      , pekkoK8sDisc
       , "ch.qos.logback" % "logback-classic" % "1.5.32"
       , "com.typesafe" % "config" % "1.4.3"
       , "org.scalafx" %% "scalafx" % "25.0.2-R37"
@@ -34,7 +34,7 @@ lazy val root = (project in file("."))
       , "com.typesafe.slick" %% "slick" % slickVersion
       , pekkoActorTestkit % Test
       , scalamock % Test
-      , pekkoMultiNodeTesting
+      , pekkoMultiNodeTesting % Test
     )
     , scalacOptions += {
      if (scalaVersion.value.startsWith("2.12"))
@@ -66,15 +66,19 @@ lazy val it = (project in file("it"))
   )
   .dependsOn(root % "test->test;compile->compile")
 
+ThisBuild / dynverSeparator := "-"
+
 // Docker configuration
 
 Docker / maintainer := "joncard93@hotmail.com"
 dockerBaseImage := "eclipse-temurin:25"
+dockerUpdateLatest := true
 val pekkoClusterPort = 7355
 dockerExposedPorts := Seq(pekkoClusterPort)
 Docker / mappings ++= Seq(
   (Compile / assembly).value -> s"${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar",
-  (Compile / sourceDirectory).value / "docker" / "application.conf" -> s"${(Docker/defaultLinuxInstallLocation).value}/etc/application.conf"
+  (Compile / sourceDirectory).value / "docker" / "application.conf" -> s"${(Docker/defaultLinuxInstallLocation).value}/etc/application.conf",
+  (Compile / sourceDirectory).value / "docker" / "logback.xml" -> s"${(Docker/defaultLinuxInstallLocation).value}/etc/logback.xml"
 )
 dockerExposedVolumes := Seq("/opt/experiments")
 
@@ -82,6 +86,21 @@ dockerExposedVolumes := Seq("/opt/experiments")
 // TODO: Adding /etc/hive-scheduler in anticipation of the application.conf I'll probably need to activate clustering and which I may want to add separately. experiment.conf and the parent experiment.conf I may want to make more configurable for Kubernetes; we'll see how that works.
 // TODO: I'm apparently hard-coding the parent experiment to /experiments, and I forgot that this should probably be run the way I am running the experiments now, which is to to loop over a folder. Suggesting that I didn't design this for how I use it.
 // TODO: I'm guessing that this will need to get runs, experimentsPath, and parent from the environment, or something, so that it can be specified in a Kubernetes Job.
-dockerEntrypoint := Seq("java", "-Xmx5g", "-classpath", s"${(Docker/defaultLinuxInstallLocation).value}/etc", "-jar", s"${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar")
+dockerEntrypoint := Seq("java", "-Xmx5g", "-classpath", s"${(Docker/defaultLinuxInstallLocation).value}/etc:${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar")
 dockerCmd := Seq("--experimentsPath=/opt/experiments", "--parent=/opt/experiments", "--runs=10")
 // See https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html for instructions on how to publish to Sonatype.
+
+lazy val init = (project)
+  .settings(
+    Docker / mappings ++= Seq(
+      (root / Compile / assembly).value -> s"${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar"
+      , (root / Compile / sourceDirectory).value / "docker" / "application.conf" -> s"${(Docker/defaultLinuxInstallLocation).value}/etc/application.conf"
+      , (root / Compile / sourceDirectory).value / "docker" / "logback.xml" -> s"${(Docker/defaultLinuxInstallLocation).value}/etc/logback.xml"
+    )
+    , dockerEntrypoint := Seq("java", "-classpath", s"${(Docker/defaultLinuxInstallLocation).value}/hive-scheduler.jar:${(Docker/defaultLinuxInstallLocation).value}/etc")
+    , dockerCmd := Seq("eusocialcooperation.scheduler.Init")
+    , dockerUpdateLatest := true
+    , dockerBaseImage := "eclipse-temurin:25"
+    , Docker / maintainer := "joncard93@hotmail.com"
+  ).dependsOn(root)
+  .enablePlugins(DockerPlugin)

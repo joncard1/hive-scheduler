@@ -208,14 +208,15 @@ object Demo extends LoggingComponent {
   }
 
   private[scheduler] def getConfigFromPath(path: String) = {
-    val currentLoader = Thread.currentThread().getContextClassLoader
+    //val currentLoader = Thread.currentThread().getContextClassLoader
 
-    def getConfigLoader(path: String): URLClassLoader = {
-      val configFile = new File(s"${path}$experimentConfigPath")
-      val folderUrl: URL = configFile.toURI.toURL
-      new URLClassLoader(Array(folderUrl), currentLoader)
-    }
-    ConfigFactory.load(getConfigLoader(path), experimentConfigurationFileName)
+    //def getConfigLoader(path: String): URLClassLoader = {
+    val configFile = new File(s"${path}${experimentConfigPath}${experimentConfigurationFileName}")
+      //val folderUrl: URL = configFile.toURI.toURL
+      //ConfigFactory.parseFile(new File(path)).resolve()
+      //new URLClassLoader(Array(folderUrl), currentLoader)
+    //}
+    ConfigFactory.parseFile(configFile)
   }
 
   /** Loads the experiment configuration for the given parameters.
@@ -229,8 +230,8 @@ object Demo extends LoggingComponent {
     * @return
     *   Loaded [[Config]] scoped to this application's package.
     */
-  def loadConfig(params: CommandLineParams, defaultApplicationConfig: Config = ConfigFactory.defaultApplication()
-): Config = {
+    // TODO: This gives higher precedence to experiment.conf tan the properties, which I'd rather was the other way
+  def loadConfig(params: CommandLineParams, defaultApplicationConfig: Config = ConfigFactory.load()): Config = {
     val parentConfig = params.parentPath.fold(defaultApplicationConfig) { parent =>
       getConfigFromPath(parent).withFallback(defaultApplicationConfig)
     }
@@ -249,31 +250,37 @@ object Demo extends LoggingComponent {
     *   Command-line arguments:
     *   `[experimentPath] [--headless=true|false] [--runs=N] [--parent=path]`
     */
-  def runGuiMode(args: Array[String], params: CommandLineParams): Unit =
-    MDC.put(mdcKey, params.experimentPath.get)
-
-    javafx.application.Platform.setImplicitExit(true)
-    javafx.application.Application.launch(classOf[GUIApp], args*)
-
   def main(args: Array[String]): Unit = {
     val params = parseCommandLineParams(args)
-    commandLineParams = params
-    config = loadConfig(params)
+    config = loadConfig(params).resolve()
+
+    logger.debug("Has path: {}, value: {}", config.hasPath("pekko.actor.provider"), config.getString("pekko.actor.provider"))
 
     if (!params.headless) {
       // TODO: I don't like how the global Demo.config is shared with the GUI, but it seems to be hard to get it in there. I think I'd have to create a controller factory? I vaguely remember that being a thing.
+      logger.debug("Running in GUI mode")
       runGuiMode(args, params)
     } else if (config.hasPath("pekko.actor.provider") && config.getString("pekko.actor.provider").equals("cluster")) {
+      logger.debug("Running in cluster mode")
       runClusterMode(params, config)
     } else if (params.experimentsPath.isDefined) {
+      logger.debug("Running in multi-experiments mode")
       runMultipleExperimentsMode(params, config)
     } else if (params.experimentPath.isDefined) {  
+      logger.debug("Running in single experiment mode")
       runSingleExperimentMode(params, config)    
     } else {
       throw new IllegalArgumentException(
         "Either experimentPath or experimentsPath must be provided. This should have been enforced by this point; check the command-line arguments parsing logic."
       )
     }
+  }
+
+  def runGuiMode(args: Array[String], params: CommandLineParams): Unit = {
+    MDC.put(mdcKey, params.experimentPath.get)
+
+    javafx.application.Platform.setImplicitExit(true)
+    javafx.application.Application.launch(classOf[GUIApp], args*)
   }
 
   def runClusterMode(params: CommandLineParams, config: Config) = {
@@ -305,7 +312,7 @@ object Demo extends LoggingComponent {
       val experimentsFolder = new File(params.experimentsPath.get)
       experimentsFolder.listFiles().filter(_.isDirectory).filter(f => (f.getName != "config") && (f.getName != "logs") && (params.parentPath.fold(true)(pp => f.getPath != pp.stripSuffix("/")))).sortBy(_.getName).foreach { experimentDir =>
         val experimentParams = params.copy(experimentPath = Some(experimentDir.getPath + "/"))
-        val experimentConfig = getConfigFromPath(experimentParams.experimentPath.get).withFallback(config)
+        val experimentConfig = getConfigFromPath(experimentParams.experimentPath.get).withFallback(config).resolve()
         processor.runExperiment(experimentParams, experimentConfig)
       }
   }
@@ -320,3 +327,4 @@ object Demo extends LoggingComponent {
 //     b. The number of pods in the Kubernetes cluster should make it into the pekko configuration, because I want the all to start when all of the pods have joined.
 //     c. The iteration of the folders should happen in Demo, not in a bash script. Which means figuring out how the command-line arguments should work differently.
 // 18. Make experimentPath as optional. If it is not headless, then it should be required. Otherwise, --parent is required. If not supplied, the run experiment on every directory in parent except "config".
+// 19. Possibly need to consider, on the question of whether Worker should start threads or futures, whether the execution context should be configured with more threads as a component of the "futures" option. Probably need more research to remind me how to make that decision.

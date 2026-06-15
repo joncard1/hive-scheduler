@@ -72,7 +72,7 @@ class ClusterProcessor(/*, workerFactory: Dispatcher.WorkerFactory, */config: Co
     promise.success(())
   }
   try {
-    Await.result(promise.future, 10.seconds)
+    Await.result(promise.future, 15.seconds)
   } catch {
     case e: TimeoutException => throw new Exception("Failed to join the cluster in the alotted time.", e)
   }
@@ -119,7 +119,7 @@ class ClusterProcessor(/*, workerFactory: Dispatcher.WorkerFactory, */config: Co
       // TODO: implement queue length monitor
 
       given Scheduler = system.scheduler
-      Await.result(dispatcher.ask(Dispatcher.StartRun(params.experimentPath.get, 0, durationMs, _)).map {
+      Await.result(dispatcher.ask(Dispatcher.StartRun(params.experimentPath.get, runNumber, durationMs, _)).map {
           case Dispatcher.RunCompleted() =>
             logger.debug("Run completed")
             //queueSampler.cancel()

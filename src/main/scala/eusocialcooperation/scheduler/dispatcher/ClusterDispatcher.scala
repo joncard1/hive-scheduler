@@ -162,6 +162,9 @@ object ClusterDispatcher extends Dispatcher {
       case UpdateCompletedResponse(resp @ Replicator.UpdateSuccess(completedMapKey)) => 
         ctx.log.info("Updated map data {}. Don't really do anything with it.", resp)
         Behaviors.same
+      case UpdateCompletedResponse(resp @ Replicator.UpdateTimeout(completedMapKey)) =>
+        ctx.log.info("Received a timeout error updating the completed map. Don't know how to handle that. {}", resp)
+        Behaviors.same
       case Dispatcher.AddProspect(point, delayMs) =>
         ctx.log.info("Adding point {}", point.value)
         setReplicator.askUpdate(
