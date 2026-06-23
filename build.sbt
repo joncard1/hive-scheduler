@@ -24,6 +24,7 @@ lazy val root = (project in file("."))
       , "org.jfree" % "org.jfree.chart.fx" % "2.0.2"
       , "org.jfree" % "org.jfree.chart3d.fx" % "2.1.1"
       , "org.jfree" % "org.jfree.chart3d" % "2.1.1"
+      , "org.typelevel" %% "cats-core" % "2.13.0"
       , pekkoActorTestkit % Test
       , scalamock % Test
     )

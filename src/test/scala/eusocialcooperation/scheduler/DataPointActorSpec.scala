@@ -25,7 +25,7 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
   test("DataPointActor replies with a DataPoint wrapping the given value") {
-    val memory = new AtomicReference[Set[DataPoint[String]]](Set.empty)
+    val memory = new AtomicReference[List[DataPoint[String]]](List.empty)
     val actor = testKit.spawn(DataPointActor[String](memory))
 
     try {
@@ -33,14 +33,14 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
         actor.ask[DataPoint[String]](DataPointActor.Create("hello", Phase.Explorer, "name", _)),
         3.seconds
       )
-      result.value shouldEqual "hello"
+      result.value `shouldEqual` "hello"
     } finally {
       testKit.stop(actor)
     }
   }
 
   test("DataPointActor works with a non-String type") {
-    val memory = new AtomicReference[Set[DataPoint[Int]]](Set.empty)
+    val memory = new AtomicReference[List[DataPoint[Int]]](List.empty)
     val actor = testKit.spawn(DataPointActor[Int](memory))
 
     try {
@@ -56,7 +56,7 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
   }
 
   test ("DataPointActor increments sequence number") {
-    val memory = new AtomicReference[Set[DataPoint[String]]](Set.empty)
+    val memory = new AtomicReference[List[DataPoint[String]]](List.empty)
 
     val actor = testKit.spawn(DataPointActor[String](memory))
 

@@ -61,8 +61,8 @@ class DispatcherSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers {
 
   /** Spawns a fresh Dispatcher with empty memory stores and the no-op factory. */
   def makeDispatcher() = {
-    val pointsMemory    = new AtomicReference[Set[DataPoint[Sample]]](Set.empty)
-    val prospectsMemory = new AtomicReference[Set[DataPoint[Point]]](Set.empty)
+    val pointsMemory    = new AtomicReference[List[DataPoint[Sample]]](List.empty)
+    val prospectsMemory = new AtomicReference[List[DataPoint[Point]]](List.empty)
     testKit.spawn(Dispatcher(pointsMemory, prospectsMemory, noOpWorkerFactory))
   }
 

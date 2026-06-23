@@ -8,71 +8,88 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
 import org.apache.pekko.actor.typed.Scheduler
 import scala.concurrent.duration.Duration
+import cats.Monad
+import cats.Applicative
+import scala.reflect.ClassTag
+
+case class DataPointContext(actorName: String, hostname: String)
 
 /** The companion object to DataPoint, which provides the "unit" operation of
   * the monad.
   */
 object DataPoint {
 
+  type DataPointMonadCreator = (phase: DataPoint.Phase, context: DataPointContext) ?=> Monad[DataPoint]
+
+  implicit def defaultDataPointMonad (
+    using sampleActor: ActorRef[DataPointActor.Create[Sample]]
+    , pointActor: ActorRef[DataPointActor.Create[Point]]
+    , scheduler: Scheduler
+    , timeout: Timeout = Timeout(3.seconds)
+
+  ): DataPointMonadCreator = (phase, context) ?=> new Monad[DataPoint]() {
+
+
+        override def tailRecM[A, B](a: A)(f: A => DataPoint[Either[A, B]]): DataPoint[B] = ???
+
+        override def flatten[A](ffa: DataPoint[DataPoint[A]]): DataPoint[A] = {
+          new DataPoint(ffa.sequenceNumber, ffa.timestamp, ffa.actorName, ffa.phase, ffa.value.value, ffa.parent)
+        }
+
+        override def flatMap[A, B](fa: DataPoint[A])(f: A => DataPoint[B]): DataPoint[B] = {
+          this.flatten(map(fa)(f))
+        }
+
+        override def map[A, B](fa: DataPoint[A])(f: A => B): DataPoint[B] = {
+          val newValue = f(fa.value)
+          newValue match {
+            case value: Point =>
+              Await.result(
+                  pointActor.ask[DataPoint[Point]](replyTo =>
+                    DataPointActor.Create(value, phase, context.actorName, replyTo, Some(fa))
+                  ),
+                  Duration.Inf
+                ).asInstanceOf[DataPoint[B]]
+            case value: Sample =>
+              Await.result(
+                sampleActor.ask[DataPoint[Sample]](replyTo =>
+                  DataPointActor.Create(value, phase, context.actorName, replyTo, Some(fa))
+                ),
+                Duration.Inf
+              ).asInstanceOf[DataPoint[B]]
+            case _ => 
+              throw new Exception("The DataPoint monad can only handle Point and Sample types at this time.")
+          }
+
+        }
+
+        override def pure[A](value: A): DataPoint[A] = {
+          value match {
+            case value : Point =>
+              Await.result(
+                pointActor.ask[DataPoint[Point]](replyTo =>
+                  DataPointActor.Create(value, phase, context.actorName, replyTo, None)
+                ),
+                Duration.Inf
+              ).asInstanceOf[DataPoint[A]]
+            case value: Sample =>
+              Await.result(
+                sampleActor.ask[DataPoint[Sample]](replyTo =>
+                  DataPointActor.Create(value, phase, context.actorName, replyTo, None)  
+                ),
+                Duration.Inf
+              ).asInstanceOf[DataPoint[A]]
+            case _ => 
+              throw new Exception("The DataPoint monad can only handle Point and Sample types at this time.")
+          }
+        }
+  }
+
   /** An enum to designate the phases in which a DataPoint can be generated.
     */
   enum Phase:
-    case Explorer, Exploiter
+    case ExplorerStart, ChooseState, Explorer, Exploiter
 
-  /** The primary factory method for lifting a value to a DataPoint[?]. The
-    * value itself is provided, but there are a number of environmental data
-    * sources that need to be made available for this to operate.
-    *
-    * This factory method uses an Apache Pekko actor to create the DataPoint in
-    * order to provide the sequence number, because I am interested in the order
-    * the points are created in. An alternative method, such as insertion into a
-    * database, could be an alternative.
-    *
-    * My intent for this class is that, as the reporting needs of the
-    * application evolved, it would not be necessary to make major structural
-    * changes to the rest of the algorithm to keep up with them, slowing
-    * development and confusing the human reader. Instead, the compiler should
-    * be able to adapt to additions or subtractions from the list of implicit
-    * parameters with only the occaisional addition of a "given" in the code
-    * that is easier to ignore than changes to the parameter list of a function.
-    * This way, changes to the implementation that are only of use to the
-    * reporting system, such as the use of a database or an actor to provide the
-    * sequence number, will be as low-impact as possible, although it isn't
-    * completely invisible.
-    *
-    * @param value
-    *   The value to be lifted into the DataPoint monad.
-    * @param dpa
-    *   The actor used to create the DataPoint.
-    * @param scheduler
-    *   The Apache Pekko scheduler used to coordinate messages, since this
-    *   constructor requires a return message.
-    * @param phase
-    *   The phase in which the point is being generated.
-    * @param parent
-    *   The precedent data that led to the generation of this data point, if
-    *   applicable.
-    * @return
-    *   The DataPoint containing the value, with the metadata provided by the
-    *   implicit parameters and the actor message.
-    */
-  def apply[A](value: A)(implicit
-      dpa: ActorRef[DataPointActor.Create[A]],
-      scheduler: Scheduler,
-      phase: Phase,
-      parent: Option[DataPoint[?]] = None
-  ): DataPoint[A] = {
-    implicit val timeout: Timeout = Timeout(3.seconds)
-    val worker: String = Thread.currentThread().getName
-
-    // Using Inf because the pekko ask function takes a timeout, and it's specified above.
-    Await.result(
-      dpa.ask[DataPoint[A]](replyTo =>
-        DataPointActor.Create(value, phase, worker, replyTo, parent)
-      ),
-      Duration.Inf
-    )
-  }
 }
 
 /** This represents a monad that tracks the metadata containing the
@@ -101,17 +118,11 @@ object DataPoint {
   *   sample point. This allows grouping by precedent to validate whether points
   *   with high prospects are properly being favored for exploitation.
   */
-class DataPoint[A](
+case class DataPoint[A](
     val sequenceNumber: Long,
     val timestamp: Long,
     val actorName: String,
     val phase: DataPoint.Phase,
     val value: A,
     val parent: Option[DataPoint[?]] = None
-) {
-  def flatMap[B](f: A => DataPoint[B]): DataPoint[B] = {
-    f(value)
-  }
-
-  // TODO: I didn't implement map because it wasn't clear whether the "correct" solution was to generate a new DataPoint or to use the metadata of the original DataPoint, or to generate new DataPoint and use the original DataPoint as the parent, etc. Since it never came up, it never got implemented. (It was never necessary to generate a List[Sample] from List[Point] of prospects, for example. Simply having one prospect didn't really require using map, but the need to track precedence came later and perhaps that use case suggests the proper implementation of map).
-}
+  )

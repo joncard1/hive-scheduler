@@ -28,6 +28,9 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
     implicit val timeout: Timeout = Timeout(30.seconds)
     implicit lazy val scheduler: Scheduler = testKit.system.scheduler
 
+    given DataPointContext = DataPointContext("actor", "host")
+    given DataPoint.Phase = DataPoint.Phase.Explorer
+
     val numSteps = 10
     val delayPerProspect = 50L
     val explorationRadius = 0.01
@@ -75,10 +78,16 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }), "pointActor")
 
         try {
-            val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
+            val state = ExplorerState(DataPoint(1, 0, "actor", DataPoint.Phase.Explorer, (startLocationX, startLocationY)), fn, BigDecimal(0.5), dispatcherProbe.ref)
+            given DataPointContext = DataPointContext("actor", "host")
             val newState = state().asInstanceOf[ExplorerState]
 
+            // Create one sample point as it looks for new prospects
             sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            // Create one point for it to start with next iteration.
+            pointProbe.expectMessageType[DataPointActor.Create[Point]]
+            // Do NOT create a prospect sent to the dispatcher
+            pointProbe.expectNoMessage()
             newState.remainingSteps.value `shouldBe` (numSteps - 1)
             newState.state `shouldBe` ExplorerState.State.LookingForFirstLowValue
         } finally {
@@ -127,10 +136,13 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         try {
             // Given the preference and the expected number of prospects delivered above, the worker should choose to be an exploiter, but if the preference is higher it should choose to be an explorer, so we can test both branches by adjusting the preference.
             val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)
-            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcherProbe.ref, Some(0))
+            val state = ExplorerState(DataPoint(1, 2, "actor", DataPoint.Phase.Explorer, (startLocationX, startLocationY)), fn, preference, dispatcherProbe.ref, Some(0))
             val newState = state().asInstanceOf[ChooseState]
 
+            // Create one sample during exploration
             sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            // Did NOT create a prospect to send to dispatcher, nor for iterating
+            pointProbe.expectNoMessage()
             //dispatcherProbe.expectMessageType[Dispatcher.RequestPoints]
         } finally {
             //testKit.stop(dispatcher)
@@ -164,10 +176,15 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }), "pointActor")
 
         try {
-            val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
+            val state = ExplorerState(DataPoint(0, 1, "actor", DataPoint.Phase.ExplorerStart, (startLocationX, startLocationY)), fn, BigDecimal(0.5), dispatcherProbe.ref)
             val newState = state().asInstanceOf[ExplorerState]
 
+            // Create a Sample while exploring
             sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            // Create one point for iterating
+            pointProbe.expectMessageType[DataPointActor.Create[Point]]
+            // Did not create a new prospect yet, so don't create another
+            pointProbe.expectNoMessage()
             newState.remainingSteps.value `shouldBe` (numPoints - 1)
             newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
         } finally {
@@ -225,10 +242,15 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         try {
             val preference = BigDecimal(weightPerProspect * newProspects.size) - BigDecimal(0.001)
-            val state = ExplorerState((startLocationX, startLocationY), fn, preference, dispatcher, None, ExplorerState.State.LookingForHighValueAfterLow, memory)
+            val state = ExplorerState(DataPoint(1, 0, "actor", DataPoint.Phase.ExplorerStart, (startLocationX, startLocationY)), fn, preference, dispatcher, None, ExplorerState.State.LookingForHighValueAfterLow, memory)
             val newState = state().asInstanceOf[ChooseState]
 
+            // Create one Sample while exploring
             sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            // Create a prospect to send to the dispatcher
+            pointProbe.expectMessageType[DataPointActor.Create[Point]]
+            // Did NOT create a point for iterating
+            pointProbe.expectNoMessage()
             dispatcherProbe.expectMessageType[Dispatcher.AddProspect]
             // Not sure why the expectMessageType can succeed without the values being set; I think the probe is notified before the monitor behavior is run.
             Await.result(setterPromise.future, 3.seconds)
@@ -268,10 +290,15 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         }), "pointActor")
 
         try {
-            val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(threshold), dispatcherProbe.ref, Some(0), State.LookingForHighValueAfterLow)
+            val state = ExplorerState(DataPoint(0, 1, "actor", DataPoint.Phase.ExplorerStart, (startLocationX, startLocationY)), fn, BigDecimal(threshold), dispatcherProbe.ref, Some(0), State.LookingForHighValueAfterLow)
             val newState = state().asInstanceOf[ExplorerState]
 
+            // Create a Sample while exploring
             sampleProbe.expectMessageType[DataPointActor.Create[Sample]]
+            // Create a Point to start the next iteration
+            pointProbe.expectMessageType[DataPointActor.Create[Point]]
+            // Do NOT create a prospect
+            pointProbe.expectNoMessage()
             newState.remainingSteps.value `shouldBe` 0
             newState.state `shouldBe` ExplorerState.State.LookingForHighValueAfterLow
         } finally {

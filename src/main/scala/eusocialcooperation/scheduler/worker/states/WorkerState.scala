@@ -12,6 +12,7 @@ import org.apache.pekko.actor.typed.Scheduler
 import org.apache.pekko.actor.typed.scaladsl.ActorContext
 import eusocialcooperation.scheduler._
 import com.typesafe.config.Config
+import cats.Monad
 
 /** The state a worker thread can be in as it performs its work. The worker
   * thread represents each agent in the algorithm and it can transition between
@@ -29,6 +30,8 @@ trait WorkerState extends LoggingComponent {
     */
   val dispatcher: ActorRef[Dispatcher.Command]
 
+  val phase: DataPoint.Phase
+
   /** Execute the proper behavior for this state. The state returned is the next
     * state the worker should be in.
     *
@@ -44,8 +47,8 @@ trait WorkerState extends LoggingComponent {
     *   this state.
     */
   def apply()(using
-      ActorRef[DataPointActor.Create[Sample]],
-      ActorRef[DataPointActor.Create[Point]],
+      Monad[DataPoint],
+      DataPointContext,
       Scheduler
   ): WorkerState
 }

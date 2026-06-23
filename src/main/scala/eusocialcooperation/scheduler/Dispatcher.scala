@@ -133,8 +133,8 @@ object Dispatcher {
     * @return
     */
   def apply(
-      pointsMemory: AtomicReference[Set[DataPoint[Sample]]],
-      prospectsMemory: AtomicReference[Set[DataPoint[Point]]]
+      pointsMemory: AtomicReference[List[DataPoint[Sample]]],
+      prospectsMemory: AtomicReference[List[DataPoint[Point]]]
   )(implicit appConfig: Config, mdc: Map[String, String]): Behavior[Command] =
     apply(
       pointsMemory,
@@ -168,8 +168,8 @@ object Dispatcher {
     * @return
     */
   def apply(
-      pointsMemory: AtomicReference[Set[DataPoint[Sample]]],
-      prospectsMemory: AtomicReference[Set[DataPoint[Point]]],
+      pointsMemory: AtomicReference[List[DataPoint[Sample]]],
+      prospectsMemory: AtomicReference[List[DataPoint[Point]]],
       workerFactory: WorkerFactory
   )(implicit appConfig: Config, mdc: Map[String, String]): Behavior[Command] =
     Behaviors.withMdc(mdc)(

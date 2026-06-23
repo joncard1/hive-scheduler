@@ -209,8 +209,8 @@ object Demo extends JFXApp3 {
       MDC.put(mdcKey, experimentPath)
 
       def createAndSaveCharts(
-          points: AtomicReference[Set[DataPoint[Sample]]],
-          prospects: AtomicReference[Set[DataPoint[Point]]],
+          points: AtomicReference[List[DataPoint[Sample]]],
+          prospects: AtomicReference[List[DataPoint[Point]]],
           queueLengths: AtomicReference[List[(Long, Int)]],
           outputPath: String
       ): (Chart3D, JFreeChart, JFreeChart, JFreeChart) = {
@@ -267,8 +267,8 @@ object Demo extends JFXApp3 {
         Using(mdcCloseable) { _ =>
           given Map[String, String] = MDC.getCopyOfContextMap().asScala.toMap
 
-          val points = AtomicReference(Set.empty[DataPoint[Sample]])
-          val prospects = AtomicReference(Set.empty[DataPoint[Point]])
+          val points = AtomicReference(List.empty[DataPoint[Sample]])
+          val prospects = AtomicReference(List.empty[DataPoint[Point]])
 
           logger.trace("Creating dispatcher actor system for run {}.", runNumber)
 

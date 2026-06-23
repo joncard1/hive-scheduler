@@ -21,10 +21,15 @@ import eusocialcooperation.scheduler.Sample
 import org.apache.pekko.actor.typed.ActorRef
 import eusocialcooperation.scheduler.Point
 import eusocialcooperation.scheduler.Worker
+import eusocialcooperation.scheduler.DataPointContext
+import eusocialcooperation.scheduler.DataPointActor.Create
 
 class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactory with OptionValues with Matchers {
 
     val testKit: ActorTestKit = ActorTestKit()
+
+    given DataPointContext = DataPointContext("actor", "host")
+    given DataPoint.Phase = DataPoint.Phase.ChooseState
 
     val numSteps = 10
     val delayPerProspect = 50L
@@ -66,7 +71,12 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         }), "dispatcher")
 
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.createTestProbe[DataPointActor.Create[Sample]]().ref
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.createTestProbe[DataPointActor.Create[Point]]().ref
+        val pointActorProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
+        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointActorProbe.ref, Behaviors.receiveMessage {
+            case Create(value, phase, name, replyTo, parent) => 
+                replyTo ! new DataPoint(1, System.currentTimeMillis(), name, phase, value, parent)
+                Behaviors.same
+        }))
 
         try {
             val preference = BigDecimal((weightPerProspect * newProspects.size) - 0.001)
@@ -101,7 +111,12 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
         }), "dispatcher")
 
         given sampleActor: ActorRef[DataPointActor.Create[Sample]] = testKit.createTestProbe[DataPointActor.Create[Sample]]().ref
-        given pointActor: ActorRef[DataPointActor.Create[Point]] = testKit.createTestProbe[DataPointActor.Create[Point]]().ref
+        val pointActorProbe = testKit.createTestProbe[DataPointActor.Create[Point]]()
+        given pointActor : ActorRef[DataPointActor.Create[Point]] = testKit.spawn(Behaviors.monitor(pointActorProbe.ref, Behaviors.receiveMessage{
+            case Create(value, phase, name, replyTo, parent) => 
+                replyTo ! new DataPoint(1, System.currentTimeMillis(), name, phase, value, parent)
+                Behaviors.same
+        }))
 
         try {
             val preference = BigDecimal((weightPerProspect * newProspects.size) + 0.001)

@@ -8,6 +8,7 @@ import scala.util.Random
 import eusocialcooperation.scheduler.worker.states.ExplorerState.State
 import eusocialcooperation.scheduler.DataPoint.Phase
 import com.typesafe.config.Config
+import cats.Monad
 
 object ExplorerState {
     val numPointsToExploreConfigKey = "explorer.numPointsToExplore"
@@ -20,16 +21,15 @@ object ExplorerState {
 }
 
 case class ExplorerState(
-    startLocation: Point,
-    kernelFn: Worker.KernelFn,
-    preference: BigDecimal
+    startLocation: DataPoint[Point]
+    , kernelFn: Worker.KernelFn
+    , preference: BigDecimal
     , dispatcher: ActorRef[Dispatcher.Command]
     , var remainingSteps: Option[Int] = None
     , state: State = State.LookingForFirstLowValue
     , memory: Set[Point] = Set.empty)(implicit config: Config) extends WorkerState with LoggingComponent{
 
-    given phase: DataPoint.Phase = DataPoint.Phase.Explorer
-    given pointParent: Option[DataPoint[?]] = None
+    override val phase: DataPoint.Phase = DataPoint.Phase.Explorer
 
     val numStepsToExplore = config.getInt(ExplorerState.numPointsToExploreConfigKey)
     val explorationRadius = config.getDouble(ExplorerState.explorationRadiusConfigKey)
@@ -38,14 +38,16 @@ case class ExplorerState(
 
     remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 
-    override def apply()(using sampleRef: ActorRef[DataPointActor.Create[Sample]], pointRef: ActorRef[DataPointActor.Create[Point]], scheduler: Scheduler): WorkerState = {
+    override def apply()(
+        using mm: Monad[DataPoint]
+        , dataPointContext: DataPointContext
+        , scheduler: Scheduler): WorkerState = {
         logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
-    
-        var (x, y) = startLocation
+        var (x, y) = startLocation.value
+        val result = kernelFn(x, y)
+        val res = mm.map(startLocation)(_ => (x, y, result))
         
         // Explore a certain number of points.
-        val result = kernelFn(x, y)
-        val res = DataPoint((x, y, result))
 
         //dispatcher ! Dispatcher.AddPoint(res)
         var angleMin = 0.0
@@ -103,7 +105,8 @@ case class ExplorerState(
                             val numSamples = memory.size
                             val avgX = sumX / numSamples
                             val avgY = sumY / numSamples
-                            val prospect = DataPoint((avgX, avgY))
+                            // TODO: This may not be good, exactly. It should have a parent of ... something.
+                            val prospect = mm.pure((avgX, avgY))
                             // TODO: Refactor out the calculation of the delay to make clear this could be non-linear
                             dispatcher ! Dispatcher.AddProspect(prospect, delayPerProspect * numSamples)
                     }
@@ -116,7 +119,8 @@ case class ExplorerState(
         newState match
             case State.LookingForHighValueAfterLow =>
                 logger.info("New state is still looking, keeping state")
-                this.copy(startLocation = newPoint, remainingSteps = Option(Math.max(0, remainingSteps.get - 1)), state = newState, memory = newMemory)
+                val newDp = mm.map(startLocation)(_ => newPoint)
+                this.copy(startLocation = newDp, remainingSteps = Option(Math.max(0, remainingSteps.get - 1)), state = newState, memory = newMemory)
             case State.NextState => // These two states should be the same, but "|" doesn't work with an "if" clause
                 logger.info("Found a high, moving to another state.")
                 ChooseState(kernelFn, preference, dispatcher)
@@ -125,6 +129,7 @@ case class ExplorerState(
                 ChooseState(kernelFn, preference, dispatcher)
             case _ =>
                 logger.info("Continuing exploration, decrementing remaining steps")
-                this.copy(startLocation = newPoint, remainingSteps = Option(remainingSteps.get - 1), state = newState, memory = newMemory)
+                val newDp = mm.map(startLocation)(_ => newPoint)
+                this.copy(startLocation = newDp, remainingSteps = Option(remainingSteps.get - 1), state = newState, memory = newMemory)
     }
 }

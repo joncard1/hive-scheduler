@@ -35,7 +35,7 @@ import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer
   * Implements the {@see eusocialcooperation.scheduler.Charter} trait for the JFree Chart library.
   */
 class JFreeCharter extends Charter {
-    override def getMainChart(pointsData: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]]): Chart3D = {
+    override def getMainChart(pointsData: List[DataPoint[Sample]], prospects: List[DataPoint[Point]]): Chart3D = {
         val series = new XYZSeries("Point Data")
             
         pointsData
@@ -50,7 +50,7 @@ class JFreeCharter extends Charter {
         chart
     }
 
-    override def getPoints2DChart(pointsData: Set[DataPoint[Sample]], prospects: Set[DataPoint[Point]]): JFreeChart = {
+    override def getPoints2DChart(pointsData: List[DataPoint[Sample]], prospects: List[DataPoint[Point]]): JFreeChart = {
         val pointsSeries = new XYSeries("Points")
         val prospectsSeries = new XYSeries("Prospects")
         pointsData
@@ -65,7 +65,7 @@ class JFreeCharter extends Charter {
         chart
     }
     
-    override def getClusterChart(pointsData: Set[DataPoint[Sample]]): JFreeChart = {
+    override def getClusterChart(pointsData: List[DataPoint[Sample]]): JFreeChart = {
         val series = new XYSeries("Cluster Analysis")
         pointsData
             .filter(p => p.parent.isDefined && (p.phase == DataPoint.Phase.Exploiter))

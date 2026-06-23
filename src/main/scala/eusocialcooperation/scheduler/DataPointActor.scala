@@ -6,6 +6,7 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist
 import org.apache.pekko.actor.typed.receptionist.ServiceKey
 import scala.reflect.ClassTag
 import org.apache.pekko.actor.typed.scaladsl.ActorContext
+import cats.Monad
 
 /** The definition of the actor used to generate DataPoints. Some mechanism was
   * required to serialize the creation across many threads in order to provide a
@@ -74,7 +75,7 @@ object DataPointActor {
     */
     // TODO: Possibly I could make mdc optional by providing a default, but considering what a pain it's been trying to ensure data gets out, I don't think that's the next thing to do.
   def apply[A: ClassTag](
-      memory: java.util.concurrent.atomic.AtomicReference[Set[DataPoint[A]]]
+      memory: java.util.concurrent.atomic.AtomicReference[List[DataPoint[A]]]
   )(implicit mdc: Map[String, String]): Behavior[Command] =
     Behaviors.withMdc(mdc)(
       Behaviors.setup(implicit context => {
@@ -100,7 +101,7 @@ object DataPointActor {
     */
   def nextState[A: ClassTag](
       nextSequenceNumber: Long,
-      memory: java.util.concurrent.atomic.AtomicReference[Set[DataPoint[A]]]
+      memory: java.util.concurrent.atomic.AtomicReference[List[DataPoint[A]]]
   )(implicit context: ActorContext[?]): Behavior[Command] =
     Behaviors.receiveMessage { msg =>
       // context.log.info(s"Creating point ${msg.name} with value ${msg.value}, phase ${msg.phase} and sequence number $nextSequenceNumber")
@@ -127,7 +128,7 @@ object DataPointActor {
           context.log.debug(
             s"Created point ${name} with value ${value}, phase ${phase} and sequence number $nextSequenceNumber"
           )
-          memory.updateAndGet(current => current + newPoint)
+          memory.updateAndGet(current => newPoint :: current)
           nextState(nextSequenceNumber + 1, memory)
         case _ =>
           context.log.warn(s"Received unexpected message: $msg")

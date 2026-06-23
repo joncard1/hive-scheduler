@@ -26,6 +26,7 @@ import scala.util.Failure
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import scala.util.Try
+import cats.Monad
 
 /** Actor that controls the worker threads.
   */
@@ -160,7 +161,12 @@ object Worker {
       ActorRef[Dispatcher.Command],
       BigDecimal,
       AtomicBoolean
-  ) => (config: Config, context: ActorContext[Command], dpaSample: ActorRef[DataPointActor.Create[Sample]], dpaPoint: ActorRef[DataPointActor.Create[Point]], mdc: Map[String, String]) ?=> Future[Unit]
+  ) => (
+    config: Config
+    , context: ActorContext[Command]
+    , mm: DataPoint.DataPointMonadCreator
+    , mdc: Map[String, String]
+  ) ?=> Future[Unit]
 
   // TODO: Not sure I like doing this with Future instead of Thread. It's probably more efficient, generally, but I think it's confusing the traceability of the workers. I suspect I'd have to add another environment parameter for the worker name, because the Futures are being run on the same threads.
   def defaultWorkerThreadFactory(
@@ -171,8 +177,7 @@ object Worker {
   )(implicit
       config: Config,
       context: ActorContext[Command],
-      sampleActor: ActorRef[DataPointActor.Create[Sample]],
-      pointActor: ActorRef[DataPointActor.Create[Point]],
+      dataPointMonadCreator: DataPoint.DataPointMonadCreator,
       mdc: Map[String, String]
   ) = {
     import context.executionContext
@@ -181,21 +186,22 @@ object Worker {
       val logger = LoggerFactory.getLogger(s"eusocialcooperation.scheduler.Worker.${context.self.path.name}")
       mdc.map { case (key, value) => MDC.put(key, value) }
 
+      // TODO: Get the real value for this.
+      given DataPointContext = DataPointContext(context.self.path.name, java.net.InetAddress.getLocalHost.getHostName)
+      given Option[DataPoint[?]] = None
+      given startM: Monad[DataPoint] = dataPointMonadCreator(using phase = DataPoint.Phase.ExplorerStart)
       try {
         var phase: WorkerState = ExplorerState(
-          (
+          startM.pure((
             BigDecimal(Random.nextDouble()),
             BigDecimal(Random.nextDouble())
-          ),
+          )),
           kernelFn,
           preference,
           dispatcher
         )
         while (running.get()) {
-          implicit val dpSampleActor: ActorRef[DataPointActor.Create[Sample]] =
-            sampleActor
-          implicit val dpPointActor: ActorRef[DataPointActor.Create[Point]] =
-            pointActor
+          given dpPhase: DataPoint.Phase = phase.phase
           phase = phase()
         }
       } catch {
