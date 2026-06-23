@@ -24,14 +24,14 @@ object PekkoDataPoint {
     *   implicit parameters and the actor message.
     */
   def getActorDataPointUnit[A](dpa: ActorRef[DataPointActor.Create[A]], scheduler: Scheduler): DataPoint.DataPointUnit[A] = {
-    (value) => (phase, actorName, parent) ?=> {
+    (value) => (context, parent) ?=> {
       implicit val timeout: Timeout = Timeout(3.seconds)
       //val worker: String = Thread.currentThread().getName
 
       // Using Inf because the pekko ask function takes a timeout, and it's specified above.
       Await.result(
         dpa.ask[DataPoint[A]](replyTo =>
-          DataPointActor.Create(value, phase, actorName, replyTo, parent)
+          DataPointActor.Create(value, context, replyTo, parent)
         )(using scheduler = scheduler),
         Duration.Inf
       )

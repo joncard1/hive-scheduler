@@ -77,7 +77,11 @@ abstract class DispatcherSpec extends AnyFunSuite with BeforeAndAfterAll with Ma
   override def afterAll(): Unit = testKit.shutdownTestKit()
 
   /** Spawns a fresh Dispatcher with empty memory stores and the no-op factory. */
-  def makeDispatcher(workerFactory: Dispatcher.WorkerFactory = noOpWorkerFactory): ActorRef[Dispatcher.Command]
+  def makeDispatcher(
+    samplesMemory: AtomicReference[Set[DataPoint[Sample]]] = AtomicReference(Set())
+    , prospectsMemory: AtomicReference[Set[DataPoint[Point]]] = AtomicReference(Set())
+    , workerFactory: Dispatcher.WorkerFactory = noOpWorkerFactory
+  ): ActorRef[Dispatcher.Command]
 
   /** Constructs a DataPoint[Point] directly (constructor is test-accessible per
     * DataPoint's scaladoc). Each call with distinct arguments produces a unique
@@ -92,6 +96,7 @@ abstract class DispatcherSpec extends AnyFunSuite with BeforeAndAfterAll with Ma
     new DataPointP(
       seq,
       System.currentTimeMillis(),
+      "hostname",
       "test-worker",
       DataPoint.Phase.Explorer,
       (BigDecimal(x), BigDecimal(y))
@@ -339,7 +344,7 @@ abstract class DispatcherSpec extends AnyFunSuite with BeforeAndAfterAll with Ma
 
   // TODO: Currently, it sends the message and uses a pipeToSelf to wait for all responses. If it instead listens for WorkerStopped messages, then it's possible to just wait forever for the response to come and it may not.
   test(s"${testName} should timeout when it sends a Stop message to a worker and then does not receive a response by doing something about it and responding with Stopped.") { // TODO: This should specify a timeout somewhere.
-    val dispatcher = makeDispatcher((duration, ctx, i, sampleUnit, prospectUnit) =>
+    val dispatcher = makeDispatcher(workerFactory = (duration, ctx, i, sampleUnit, prospectUnit) =>
       val log = ctx.log
       ctx.spawn(
         Behaviors.setup[Worker.Command] { context =>

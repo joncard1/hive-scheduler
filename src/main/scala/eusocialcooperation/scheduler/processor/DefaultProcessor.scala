@@ -29,9 +29,17 @@ import com.typesafe.config.Config
 import scala.jdk.DurationConverters.JavaDurationOps
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import scala.concurrent.ExecutionContext
+import scala.util.Using.Releasable
+
+object DefaultProcessor {
+  given Releasable[DefaultProcessor] = new Releasable[DefaultProcessor] {
+    def release(resource: DefaultProcessor): Unit = {}
+  }
+}
 
 // TODO: This could probably be further refactored to the headless and non-headless versions.
-class DefaultProcessor(mdcKey: String, controller: Option[MainLayoutController]) extends Processor with LoggingComponent {
+class DefaultProcessor(mdcKey: String, controller: Option[MainLayoutController]) extends Processor[DefaultProcessor] with LoggingComponent {
+
 
   val currentActorSystem: AtomicReference[Option[ActorSystem[Dispatcher.Command]]] = AtomicReference(None)
 

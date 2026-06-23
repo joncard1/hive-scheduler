@@ -30,5 +30,5 @@ package object scheduler {
     */
   type Sample = (BigDecimal, BigDecimal, BigDecimal)
   // TODO: This actually was never used, or never required. Review for whether it should just be removed.
-  class DataPointS(sequenceNumber: Long, timestamp: Long, actorName: String, phase: DataPoint.Phase, value: Sample, parent: Option[DataPoint[?]] = None) extends DataPoint[Sample](sequenceNumber, timestamp, actorName, phase, value, parent)
+  class DataPointS(sequenceNumber: Long, timestamp: Long, hostName: String, actorName: String, phase: DataPoint.Phase, value: Sample, parent: Option[DataPoint[?]] = None) extends DataPoint[Sample](sequenceNumber, timestamp, hostName, actorName, phase, value, parent)
 }

@@ -18,6 +18,7 @@ import org.apache.pekko.actor.typed.ActorRef
 import eusocialcooperation.scheduler.Point
 import eusocialcooperation.scheduler.Worker
 import eusocialcooperation.scheduler.DataPointP
+import eusocialcooperation.scheduler.datapoint.DataPointContext
 
 class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactory with OptionValues with Matchers {
 
@@ -50,13 +51,16 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
 
         given sampleUnit: DataPoint.DataPointUnit[Sample] = mock[DataPoint.DataPointUnit[Sample]]
         given pointUnit: DataPoint.DataPointUnit[Point] = mock[DataPoint.DataPointUnit[Point]]
-        given actorName: String = "workername"
+        val actorName = "workername"
+        val hostName = "hostname"
+        val phase = DataPoint.Phase.ChooseState
+        given DataPointContext = DataPointContext(phase, hostName, actorName)
 
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
 
         val newProspects = Set(
-            new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPointP(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPointP(0, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPointP(1, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {
@@ -89,13 +93,15 @@ class ChooseStateSpec extends AnyFunSuite with BeforeAndAfterAll with MockFactor
 
         given sampleUnit: DataPoint.DataPointUnit[Sample] = mock[DataPoint.DataPointUnit[Sample]]
         given pointUnit: DataPoint.DataPointUnit[Point] = mock[DataPoint.DataPointUnit[Point]]
-        given actorName: String = "workername"
+        val actorName = "workername"
+        val hostName = "hostname"
+        given DataPointContext = DataPointContext(DataPoint.Phase.ChooseState, hostName, actorName)
 
         val fn = mockFunction[BigDecimal, BigDecimal, BigDecimal]
 
         val newProspects = Set(
-            new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPointP(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPointP(0, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPointP(1, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         val dispatcher = testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, Behaviors.receiveMessage[Dispatcher.Command] {

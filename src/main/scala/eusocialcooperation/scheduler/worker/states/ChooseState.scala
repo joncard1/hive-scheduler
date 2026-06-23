@@ -14,6 +14,7 @@ import org.apache.pekko.util.Timeout
 import scala.concurrent.duration.DurationInt
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.Askable
 import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler.datapoint.DataPointContext
 
 /** The state in which the worker chooses its next state and also sleeps for the
   * time configured in {@Worker.loopDelayConfigKey} before making that choice.
@@ -43,10 +44,12 @@ final case class ChooseState(
   val loopDelayMs = config.getMilliseconds(Worker.loopDelayConfigKey)
   val weightPerProspect = config.getDouble(Worker.weightPerProspectConfigKey)
 
+  val phase = DataPoint.Phase.ChooseState
+
   override def apply()(using
       DataPoint.DataPointUnit[Sample],
       DataPoint.DataPointUnit[Point],
-      String,
+      DataPointContext,
       Scheduler
   ): WorkerState = {
     implicit val ec: scala.concurrent.ExecutionContext =

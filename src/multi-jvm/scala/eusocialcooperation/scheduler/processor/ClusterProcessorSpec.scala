@@ -25,6 +25,9 @@ import eusocialcooperation.scheduler.dispatcher.ClusterDispatcher
 import eusocialcooperation.scheduler.Worker
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import scala.util.Success
+import java.util.concurrent.atomic.AtomicReference
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler._
 
 // TODO: Consider another MultiJvm test that is not a MultiNodeSpec to test creating the ActorSystem itself.
 
@@ -153,13 +156,15 @@ abstract class ClusterProcessorSpec extends MultiNodeSpec(ClusterProcessorConfig
     )
 
 
-    "ClusterDispatcher" must {
+    "ClusterProcessor" must {
         "start properly" in within(10.seconds) {
             given ExecutionContext = typedSystem.executionContext
             given Map[String, String] = Map()
 
             Cluster(system).subscribe(testActor, classOf[MemberUp])
-            system.spawn(ClusterDispatcher((duration, context, run, sampleUnit, prospectUnit) => {
+            val samplesMemory = AtomicReference[Set[DataPoint[Sample]]](Set())
+            val prospectsMemory = AtomicReference[Set[DataPoint[Point]]](Set())
+            system.spawn(ClusterDispatcher(samplesMemory, prospectsMemory, (duration, context, run, sampleUnit, prospectUnit) => {
                 context.spawn(Behaviors.setup[Worker.Command] { ctx =>
                     ctx.scheduleOnce(duration, ctx.self, Worker.Stop(context.self))
                     Behaviors.receiveMessage {

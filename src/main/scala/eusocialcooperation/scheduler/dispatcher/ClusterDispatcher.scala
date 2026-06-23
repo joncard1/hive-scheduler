@@ -6,14 +6,12 @@ import org.apache.pekko.cluster.ddata.typed.scaladsl.ReplicatorMessageAdapter
 import org.apache.pekko.cluster.ddata.ORSet
 import org.apache.pekko.actor.typed.Behavior
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
-import eusocialcooperation.scheduler.datapoint.PostgresSQLDataPoint
 import slick.basic.DatabaseConfig
 import com.typesafe.config.Config
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import org.apache.pekko.actor.typed.ActorRef
 import org.apache.pekko.actor.typed.scaladsl.ActorContext
 import Dispatcher.WorkerFactory
-import scala.concurrent.ExecutionContext
 import org.apache.pekko.cluster.ddata.typed.scaladsl.Replicator
 import org.apache.pekko.cluster.ddata.SelfUniqueAddress
 import scala.concurrent.duration.DurationLong
@@ -27,6 +25,9 @@ import org.apache.pekko.cluster.typed.ClusterSingleton
 import org.apache.pekko.cluster.typed.SingletonActor
 import eusocialcooperation.scheduler.dispatcher.Dispatcher.WorkersStopped
 import eusocialcooperation.scheduler._
+import eusocialcooperation.scheduler.datapoint.DataPointActor
+import eusocialcooperation.scheduler.datapoint.PekkoDataPoint
+import java.util.concurrent.atomic.AtomicReference
 
 object ClusterDispatcher extends Dispatcher {
 
@@ -44,57 +45,67 @@ object ClusterDispatcher extends Dispatcher {
       resp: Replicator.UpdateResponse[ORMap[String, Flag]]
   ) extends Dispatcher.Command
   case class DataReset() extends Dispatcher.Command
+  //case class DatabaseQueueDrained(msg: Dispatcher.WorkersStopped) extends Dispatcher.Command
+
+  case class DatabaseReady() extends Dispatcher.Response
 
   val prospectSetKey = ORSetKey[DataPointP]("hive-scheduler-prospect-set")
   val completedMapKey = ORMapKey[String, Flag]("hive-scheduler-completed-map")
 
-  def apply()(implicit config: Config, mdc: Map[String, String]): Behavior[Dispatcher.Command] = apply((duration, ctx, i, sampleUnit, prospectUnit) => ctx.spawn(Worker(kernel, ctx.self, duration)(using sampleUnit = sampleUnit, prospectUnit = prospectUnit), s"worker-$i"))
+  def apply(pointsMemory: AtomicReference[Set[DataPoint[Sample]]], prospectsMemory: AtomicReference[Set[DataPoint[Point]]])(implicit config: Config, mdc: Map[String, String]): Behavior[Dispatcher.Command] =
+    apply(pointsMemory, prospectsMemory, (duration, ctx, i, sampleUnit, prospectUnit) => ctx.spawn(Worker(kernel, ctx.self, duration)(using sampleUnit = sampleUnit, prospectUnit = prospectUnit), s"worker-$i"))
 
-  def apply(f: WorkerFactory)(implicit
+  def apply(
+    pointsMemory: AtomicReference[Set[DataPoint[Sample]]],
+    prospectsMemory: AtomicReference[Set[DataPoint[Point]]],
+    f: WorkerFactory)(implicit
       config: Config,
       mdc: Map[String, String]
-  ) = super.apply(f) { (ctx, run, experimentName, parentBehavior) =>
-    given ExecutionContext = ctx.system.executionContext
-    Behaviors.withMdc(mdc) {
-      DistributedData.withReplicatorMessageAdapter[Dispatcher.Command, ORSet[
-        DataPointP
-      ]] { setReplicator =>
-        DistributedData
-          .withReplicatorMessageAdapter[Dispatcher.Command, ORMap[String, Flag]] {
-            val singletonManager = ClusterSingleton(ctx.system)
-            val monitor = singletonManager.init(SingletonActor(ClusterMonitor(), "cluster-monitor"))
+  ) = Behaviors.withMdc[Dispatcher.Command](mdc) {
+        Behaviors.setup { ctx =>
+          val dbConfig =
+            DatabaseConfig.forConfig[PostgresProfile]("postgres_db", config)
 
-            mapReplicator =>
-              implicit val node: SelfUniqueAddress = DistributedData(
-                ctx.system
-              ).selfUniqueAddress
+          val sampleActor =
+            ctx.spawn(DataPointActor[Sample](pointsMemory), "sampleActor")
+          val pointActor = ctx.spawn(
+            DataPointActor[Point](prospectsMemory),
+            "pointActor"
+          )
 
-              val dbConfig =
-                DatabaseConfig.forConfig[PostgresProfile]("postgres_db", config)
-              val sampleUnit =
-                PostgresSQLDataPoint.getDBSampleUnit(
-                  run,
-                  experimentName,
-                  dbConfig
-                )
-              val pointUnit =
-                PostgresSQLDataPoint.getDBProspectUnit(
-                  run,
-                  experimentName,
-                  dbConfig
-                )
-              mapReplicator.askUpdate(
-                Replicator.Update(
-                  completedMapKey,
-                  ORMap.empty,
-                  Replicator.WriteAll(5.seconds),
-                  _
-                )(_ :+ (node.toString -> Flag.Disabled)),
-                UpdateCompletedResponse(_)
-              )
-              Behaviors.receiveMessage(
-                active(mapReplicator, setReplicator, sampleUnit, pointUnit, parentBehavior(sampleUnit, pointUnit), ctx)
-              )
+          val sampleUnit = PekkoDataPoint
+                .getActorDataPointUnit[Sample](sampleActor, ctx.system.scheduler)
+          val prospectUnit = PekkoDataPoint
+                .getActorDataPointUnit[Point](pointActor, ctx.system.scheduler)
+
+          val singletonManager = ClusterSingleton(ctx.system)
+          val monitor = singletonManager.init(SingletonActor(ClusterMonitor(), "cluster-monitor"))
+
+          DistributedData.withReplicatorMessageAdapter[Dispatcher.Command, ORSet[
+            DataPointP
+          ]] { setReplicator =>
+            DistributedData
+              .withReplicatorMessageAdapter[Dispatcher.Command, ORMap[String, Flag]] {
+                mapReplicator =>
+                  implicit val node: SelfUniqueAddress = DistributedData(
+                    ctx.system
+                  ).selfUniqueAddress
+
+                  super.apply(f) { (ctx, run, experimentName, parentBehavior) => {
+                    mapReplicator.askUpdate(
+                      Replicator.Update(
+                        completedMapKey,
+                        ORMap.empty,
+                        Replicator.WriteAll(5.seconds),
+                        _
+                      )(_ :+ (node.toString -> Flag.Disabled)),
+                      UpdateCompletedResponse(_)
+                    )
+                    Behaviors.receiveMessage(
+                      active(mapReplicator, setReplicator, sampleUnit, prospectUnit, dbConfig, parentBehavior(sampleUnit, prospectUnit), ctx)
+                    )
+                  }
+              }
           }
       }
     }
@@ -107,6 +118,7 @@ object ClusterDispatcher extends Dispatcher {
       ]],
       sampleUnit: DataPoint.DataPointUnit[Sample],
       pointUnit: DataPoint.DataPointUnit[Point],
+      dbConfig: DatabaseConfig[PostgresProfile],
       parentBehavior: PartialFunction[Dispatcher.Command, Behavior[
         Dispatcher.Command
       ]],
@@ -115,8 +127,12 @@ object ClusterDispatcher extends Dispatcher {
       node: SelfUniqueAddress
   ): PartialFunction[Dispatcher.Command, Behavior[Dispatcher.Command]] = {
     val t: PartialFunction[Dispatcher.Command, Behavior[Dispatcher.Command]] = {
+      case msg @ Dispatcher.Stop(replyTo) =>
+        ctx.log.debug("Received Dispatcher.Stop message. Closing database connection")
+        dbConfig.db.close()
+        parentBehavior(msg)
       case msg @ WorkersStopped(e) =>
-        ctx.log.info("Received WorkersStopped message, updating map and forwarding")
+        ctx.log.debug("Received WorkersStopped message, updating map and forwarding")
         completedReplicator.askUpdate(
           Replicator.Update(
             completedMapKey,
@@ -127,7 +143,13 @@ object ClusterDispatcher extends Dispatcher {
           UpdateCompletedResponse(_)
         )
         ctx.log.info("As far as I know, I updated the map")
+        //import ctx.executionContext
+        //given FiniteDuration = 20.seconds
+        //ctx.pipeToSelf(PostgresSQLDataPoint.drain())(_ => DatabaseQueueDrained(msg))
         parentBehavior(msg)
+      //case msg @ DatabaseQueueDrained(workersStoppedMsg) =>
+        //ctx.log.debug("Database drained")
+        //parentBehavior(workersStoppedMsg)
       case GetDataResponse(
             resp @ Replicator.GetSuccess(`prospectSetKey`),
             replyTo

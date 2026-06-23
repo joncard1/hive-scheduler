@@ -27,6 +27,9 @@ import org.apache.pekko.cluster.ddata.Replicator.SubscribeResponse
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import scala.util.Using
 import eusocialcooperation.scheduler.DataPointP
+import java.util.concurrent.atomic.AtomicReference
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler._
 
 class ClusterDispatcherSingleSpec extends DispatcherSpec with BeforeAndAfterEach {
     val config: Config = ConfigFactory.parseString("""
@@ -58,8 +61,12 @@ class ClusterDispatcherSingleSpec extends DispatcherSpec with BeforeAndAfterEach
         }
     }
 
-    override def makeDispatcher(workerFactory: Dispatcher.WorkerFactory = noOpWorkerFactory) = {
-        testKit.spawn(ClusterDispatcher(workerFactory))
+    override def makeDispatcher(
+        samplesMemory: AtomicReference[Set[DataPoint[Sample]]] = AtomicReference(Set())
+        , prospectsMemory: AtomicReference[Set[DataPoint[Point]]] = AtomicReference(Set())
+        , workerFactory: Dispatcher.WorkerFactory = noOpWorkerFactory
+    ) = {
+        testKit.spawn(ClusterDispatcher(samplesMemory, prospectsMemory, workerFactory))
     }
 
     override protected def afterEach(): Unit = {
@@ -109,7 +116,9 @@ class ClusterDispatcherSingleSpec extends DispatcherSpec with BeforeAndAfterEach
         
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         val duration = 1.seconds
-        Using.resource(testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, ClusterDispatcher(noOpWorkerFactory)))) { dispatcher =>
+        val samplesMemory = AtomicReference(Set[DataPoint[Sample]]())
+        val prospectsMemory = AtomicReference(Set[DataPoint[Point]]())
+        Using.resource(testKit.spawn(Behaviors.monitor(dispatcherProbe.ref, ClusterDispatcher(samplesMemory, prospectsMemory, noOpWorkerFactory)))) { dispatcher =>
             dispatcher ! Dispatcher.StartRun("test", 1, duration, endProbe.ref)
             dd.replicator ! Replicator.Subscribe(ClusterDispatcher.completedMapKey, subscribeProbe.ref)
             subscribeProbe.receiveMessage() match {

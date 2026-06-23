@@ -2,14 +2,13 @@ package eusocialcooperation.scheduler
 
 import com.typesafe.config.ConfigFactory
 import java.io.File
-import java.net.URL
-import java.net.URLClassLoader
 import com.typesafe.config.Config
 import org.slf4j.MDC
 import scala.compiletime.uninitialized
 import eusocialcooperation.scheduler.processor.DefaultProcessor
 import eusocialcooperation.scheduler.processor.ClusterProcessor
 import eusocialcooperation.scheduler.processor.Processor
+import scala.util.Using
 
 /** The main entry point of the application. When this is started, the system is
   * constructed in 2 parts: the UI and the processing thread. The UI is
@@ -287,20 +286,26 @@ object Demo extends LoggingComponent {
     implicit val ec: scala.concurrent.ExecutionContext =
       scala.concurrent.ExecutionContext.global
 
-    val processor = new ClusterProcessor(config)
-
-    runMultipleExperimentsMode(params, config, processor)
+    Using.resource(new ClusterProcessor(config)) { processor =>
+      multiExperimentsMode(params, config, processor)
+    }
   }
 
   def runSingleExperimentMode(params: CommandLineParams, config: Config) = {
     implicit val ec: scala.concurrent.ExecutionContext =
       scala.concurrent.ExecutionContext.global
-    val processor = new DefaultProcessor(mdcKey, None)
-
-    processor.runExperiment(params, config)
+    Using.resource(new DefaultProcessor(mdcKey, None)) { processor =>
+      processor.runExperiment(params, config)
+    }
   }
 
-  def runMultipleExperimentsMode(params: CommandLineParams, config: Config, processor: Processor = new DefaultProcessor(mdcKey, None)) = {
+  def runMultipleExperimentsMode(params: CommandLineParams, config: Config) = {
+    Using.resource(new DefaultProcessor(mdcKey, None)) {processor => 
+      multiExperimentsMode(params, config, processor)  
+    }
+  }
+  
+  def multiExperimentsMode(params: CommandLineParams, config: Config, processor: Processor[?]) = {
     implicit val ec: scala.concurrent.ExecutionContext =
         scala.concurrent.ExecutionContext.global
 

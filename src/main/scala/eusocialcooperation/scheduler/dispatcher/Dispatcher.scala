@@ -331,6 +331,7 @@ trait Dispatcher {
         ctx.self ! Dispatcher.WorkerStopped(worker, Failure(new Exception("Timed out shutting down worker.")))
         Behaviors.same
       case Dispatcher.WorkerStopped(worker, result) =>
+        ctx.log.debug("Received message that worker stopped")
         workersStopping.getAndUpdate(workersStopping => {
           workersStopping.get(worker).map { _.cancel() }
           workersStopping.removed(worker)
@@ -338,10 +339,13 @@ trait Dispatcher {
         workersRunning.getAndUpdate(_ - worker)
         results.getAndUpdate(_ + result) // TODO: This is dumb; it should keep track of which thread failed, etc.
         if (workersRunning.get().isEmpty) {
+          ctx.log.debug("Stopping workers")
           val accResult = results.get().foldLeft(Success(()): Try[Unit])((acc, x) => if (acc.isFailure) { acc } else { x }) match { // There's probably a better way to accumulate this Set[Try[Unit]].
             case Failure(exception) => 
+              ctx.log.debug("Found at least one failed worker")
               ctx.self ! WorkersStopped(Some(exception)) // TODO: Not sure about this, but the way things are now, the PekkoDispatcher doesn't notify anyone when all of the workers are stopped. Maybe that should be different.
             case Success(value) => 
+              ctx.log.debug("Found no failed workers")
               ctx.self ! WorkersStopped(None) // TODO: Not sure about this, but the way things are now, the PekkoDispatcher doesn't notify anyone when all of the workers are stopped. Maybe that should be different.
           }
         }

@@ -6,6 +6,7 @@ import org.apache.pekko.actor.typed.Scheduler
 import eusocialcooperation.scheduler._
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.dispatcher.Dispatcher
+import eusocialcooperation.scheduler.datapoint.DataPointContext
 
 /** The state a worker thread can be in as it performs its work. The worker
   * thread represents each agent in the algorithm and it can transition between
@@ -14,6 +15,8 @@ import eusocialcooperation.scheduler.dispatcher.Dispatcher
   * systematically samples in a grid around that point.
   */
 trait WorkerState extends LoggingComponent {
+
+  val phase: DataPoint.Phase
 
   /** The weight the worker gives to being an exploiter rather than an explorer.
     */
@@ -42,7 +45,7 @@ trait WorkerState extends LoggingComponent {
   def apply()(using
       DataPoint.DataPointUnit[Sample],
       DataPoint.DataPointUnit[Point],
-      String,
+      DataPointContext,
       Scheduler
   ): WorkerState
 }

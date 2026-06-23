@@ -22,6 +22,7 @@ import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.datapoint.PekkoDataPoint
 import eusocialcooperation.scheduler.dispatcher.Dispatcher
 import scala.concurrent.duration.FiniteDuration
+import eusocialcooperation.scheduler.datapoint.DataPointContext
 
 /** Actor that controls the worker threads.
   */
@@ -222,9 +223,11 @@ object Worker {
           dispatcher
         )
         while (running.get()) {
-          implicit val dpSampleUnit: DataPoint.DataPointUnit[Sample] = sampleUnit
-          implicit val dpPointUnit: DataPoint.DataPointUnit[Point] = pointUnit
-          implicit val actorName: String = context.self.path.toString
+          given dpSampleUnit: DataPoint.DataPointUnit[Sample] = sampleUnit
+          given dpPointUnit: DataPoint.DataPointUnit[Point] = pointUnit
+          val actorName: String = context.self.path.toString
+          val hostName = java.net.InetAddress.getLocalHost.getHostName
+          given DataPointContext = DataPointContext(phase.phase, hostName, actorName)
           phase = phase()
         }
       } catch {

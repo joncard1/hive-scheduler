@@ -21,9 +21,9 @@ class DefaultArchiverSpec extends AnyFunSuite with Matchers with MockFactory {
     val archiver = new DefaultArchiver("testPath", () => pointsWriter, () => prospectsWriter, () => queueLengthsWriter, () => metadataWriter)
     val point1 = (BigDecimal(1.0), BigDecimal(2.0), BigDecimal(3.0))
     val prospect1 = (BigDecimal(4.0), BigDecimal(5.0))
-    val dpProspect = new DataPoint(2, 100L, "actor2", DataPoint.Phase.Explorer, prospect1, None)
+    val dpProspect = new DataPoint(2, 100L, "hostname", "actor2", DataPoint.Phase.Explorer, prospect1, None)
     val pointsData = Seq(
-      new DataPoint(1, 0L, "actor1", DataPoint.Phase.Exploiter, point1, Some(dpProspect))
+      new DataPoint(1, 0L, "hostname", "actor1", DataPoint.Phase.Exploiter, point1, Some(dpProspect))
     )
     val prospects = Seq(
       dpProspect

@@ -1,5 +1,7 @@
 package eusocialcooperation.scheduler.datapoint
 
+case class DataPointContext(phase: DataPoint.Phase, hostname: String, actorName: String)
+
 /** 
  * My intent for this class is that, as the reporting needs of the
     * application evolves, it would not be necessary to make major structural
@@ -20,12 +22,12 @@ object DataPoint {
     * The type description of the unit operator for lifting a value to a DataValue.
     */
   type DataPointUnit[A] =
-    (A) => (Phase, String, Option[DataPoint[?]]) ?=> DataPoint[A]
+    (A) => (DataPointContext, Option[DataPoint[?]]) ?=> DataPoint[A]
 
   /** An enum to designate the phases in which a DataPoint can be generated.
     */
   enum Phase:
-    case Explorer, Exploiter
+    case Explorer, Exploiter, ChooseState
 }
 
 /** This represents a monad that tracks the metadata containing the
@@ -55,6 +57,7 @@ object DataPoint {
 class DataPoint[A](
     val sequenceNumber: Long,
     val timestamp: Long,
+    val hostName: String,
     val actorName: String,
     val phase: DataPoint.Phase,
     val value: A,
@@ -89,8 +92,7 @@ class DataPoint[A](
     */
   def map[B](f: A => B)(implicit
       dpb: DataPoint.DataPointUnit[B],
-      phase: DataPoint.Phase,
-      actorName: String
+      context: DataPointContext
   ): DataPoint[B] = {
     given Option[DataPoint[?]] = Some(this)
     dpb(

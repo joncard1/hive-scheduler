@@ -36,11 +36,8 @@ object DataPointActor {
     *
     * @param value
     *   The value to be encapsulated in the DataPoint.
-    * @param phase
-    *   The phase in which the point is being generated.
-    * @param name
-    *   The name of the context (thread name, actor name, etc.) in which the
-    *   point is being generated.
+    * @param context
+    *   The DTO carrying the contextual information tracked in the DataPoint monad.
     * @param replyTo
     *   The actor reference to which to send the constructed DataPoint.
     * @param parent
@@ -49,8 +46,7 @@ object DataPointActor {
     */
   final case class Create[A](
       value: A,
-      phase: DataPoint.Phase,
-      name: String,
+      context: DataPointContext,
       replyTo: ActorRef[DataPoint[A]],
       parent: Option[DataPoint[?]] = None
   ) extends Command
@@ -108,25 +104,25 @@ object DataPointActor {
       msg match {
         case Create(
               value: A,
-              phase,
-              name,
+              dpContext,
               replyTo: ActorRef[DataPoint[A]],
               parent
             ) =>
           context.log.debug(
-            s"Creating point ${name} with value ${value}, phase ${phase} and sequence number $nextSequenceNumber"
+            s"Creating point ${dpContext.hostname}:${dpContext.actorName} with value ${value}, phase ${dpContext.phase} and sequence number $nextSequenceNumber"
           )
           val newPoint = new DataPoint(
             nextSequenceNumber,
             System.currentTimeMillis(),
-            name,
-            phase,
+            dpContext.hostname,
+            dpContext.actorName,
+            dpContext.phase,
             value,
             parent
           )
           replyTo ! newPoint
           context.log.debug(
-            s"Created point ${name} with value ${value}, phase ${phase} and sequence number $nextSequenceNumber"
+            s"Created point ${dpContext.hostname}:${dpContext.actorName} with value ${value}, phase ${dpContext.phase} and sequence number $nextSequenceNumber"
           )
           memory.updateAndGet(current => current + newPoint)
           nextState(nextSequenceNumber + 1, memory)

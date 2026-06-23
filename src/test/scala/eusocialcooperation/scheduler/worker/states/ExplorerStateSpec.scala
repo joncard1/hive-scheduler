@@ -17,10 +17,10 @@ import scala.concurrent.Promise
 import scala.concurrent.Await
 import eusocialcooperation.scheduler.worker.states.ExplorerState.State
 import com.typesafe.config.Config
-import eusocialcooperation.scheduler.datapoint.DataPoint.Phase
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import org.scalamock.function.MockFunction1
 import eusocialcooperation.scheduler.dispatcher.Dispatcher
+import eusocialcooperation.scheduler.datapoint.DataPointContext
 
 class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers with MockFactory with OptionValues {
     val testKit: ActorTestKit = ActorTestKit()
@@ -61,17 +61,20 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
 
-        given actorName: String = "workername"
+        val actorName = "workername"
+        val hostName = "hostname"
+        val phase = DataPoint.Phase.Explorer
+        given context: DataPointContext = DataPointContext(phase, hostName, actorName)
 
-        val mockSampleUnit = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
-        mockSampleUnit.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
-        def sampleUnit(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
-            mockSampleUnit(actorName, phase, sample, parent)
+        val mockSampleUnit = mockFunction[DataPointContext, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleUnit.expects(context, *, None).onCall((context: DataPointContext, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, context.hostname, context.actorName, context.phase, sample, parent))
+        def sampleUnit(sample: Sample)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleUnit(context, sample, parent)
         }
-        val mockPointUnit = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
-        mockPointUnit.expects(*, *, *, *).never()
-        def pointUnit(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
-            mockPointUnit(actorName, phase, point, parent)
+        val mockPointUnit = mockFunction[DataPointContext, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointUnit.expects(*, *, *).never()
+        def pointUnit(point: Point)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointUnit(context, point, parent)
         }
 
         val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
@@ -91,23 +94,26 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
         val newProspects = Set(
-            new DataPoint(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPoint(1, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPoint(0, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPoint(1, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
 
-        given actorName: String = "workername"
+        val actorName = "workername"
+        val hostName = "hostname"
+        val phase = DataPoint.Phase.Explorer
+        given context: DataPointContext = DataPointContext(phase, hostName, actorName)
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         
-        val mockSampleUnit = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
-        mockSampleUnit.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
-        def sampleUnit(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
-            mockSampleUnit(actorName, phase, sample, parent)
+        val mockSampleUnit = mockFunction[DataPointContext, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleUnit.expects(context, *, None).onCall((context: DataPointContext, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, context.hostname, context.actorName, context.phase, sample, parent))
+        def sampleUnit(sample: Sample)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleUnit(context, sample, parent)
         }
-        val mockPointUnit = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
-        mockPointUnit.expects(*, *, *, *).never()
-        def pointUnit(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
-            mockPointUnit(actorName, phase, point, parent)
+        val mockPointUnit = mockFunction[DataPointContext, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointUnit.expects(*, *, *).never()
+        def pointUnit(point: Point)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointUnit(context, point, parent)
         }
 
         // Given the preference and the expected number of prospects delivered above, the worker should choose to be an exploiter, but if the preference is higher it should choose to be an explorer, so we can test both branches by adjusting the preference.
@@ -129,19 +135,22 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
 
-        given actorName: String = "workername"
+        val actorName = "workername"
+        val hostname = "hostname"
+        val phase = DataPoint.Phase.Explorer
+        given context: DataPointContext = DataPointContext(phase, hostname, actorName)
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
 
-        val mockSampleUnit = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
-        mockSampleUnit.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
-        def sampleUnit(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
-            mockSampleUnit(actorName, phase, sample, parent)
+        val mockSampleUnit = mockFunction[DataPointContext, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleUnit.expects(context, *, None).onCall((context: DataPointContext, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, context.hostname, context.actorName, context.phase, sample, parent))
+        def sampleUnit(sample: Sample)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleUnit(context, sample, parent)
         }
-        val mockPointUnit = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
-        mockPointUnit.expects(*, *, *, *).never()
-        def pointUnit(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
-            mockPointUnit(actorName, phase, point, parent)
+        val mockPointUnit = mockFunction[DataPointContext, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointUnit.expects(*, *, *).never()
+        def pointUnit(point: Point)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointUnit(context, point, parent)
         }
 
         val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(0.5), dispatcherProbe.ref)
@@ -163,11 +172,14 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
         val startLocationX = BigDecimal(0.5)
         val startLocationY = BigDecimal(0.5)
         val newProspects = Set(
-            new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
-            , new DataPointP(0, 0, "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
+            new DataPointP(0, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.1), BigDecimal(0.1)), None)
+            , new DataPointP(0, 0, "host", "name", DataPoint.Phase.Explorer, (BigDecimal(0.2), BigDecimal(0.2)), None)
         )
 
-        given actorName: String = "workername"
+        val phase = DataPoint.Phase.Explorer
+        val hostname = "hostname"
+        val actorName = "workername"
+        given context: DataPointContext = DataPointContext(phase, hostname, actorName)
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
         var actualDelay = AtomicLong(0L)
@@ -187,15 +199,15 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
             case _ => Behaviors.same
         }), "dispatcher")
 
-        val mockSampleUnit = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
-        mockSampleUnit.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
-        def sampleUnit(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
-            mockSampleUnit(actorName, phase, sample, parent)
+        val mockSampleUnit = mockFunction[DataPointContext, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleUnit.expects(context, *, None).onCall((context: DataPointContext, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, context.hostname, context.actorName, context.phase, sample, parent))
+        def sampleUnit(sample: Sample)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleUnit(context, sample, parent)
         }
-        val mockPointUnit = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
-        mockPointUnit.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, point: Point, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, point, parent))
-        def pointUnit(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
-            mockPointUnit(actorName, phase, point, parent)
+        val mockPointUnit = mockFunction[DataPointContext, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointUnit.expects(context, *, None).onCall((context: DataPointContext, point: Point, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, context.hostname, context.actorName, context.phase, point, parent))
+        def pointUnit(point: Point)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointUnit(context, point, parent)
         }
 
         try {
@@ -226,17 +238,20 @@ class ExplorerStateSpec extends AnyFunSuite with BeforeAndAfterAll with Matchers
 
         val dispatcherProbe = testKit.createTestProbe[Dispatcher.Command]()
 
-        given actorName: String = "workername"
+        val hostname = "hostname"
+        val actorName = "workername"
+        val phase = DataPoint.Phase.Explorer
+        given context: DataPointContext = DataPointContext(phase, hostname, actorName)
 
-        val mockSampleUnit = mockFunction[String, DataPoint.Phase, Sample, Option[DataPoint[?]], DataPoint[Sample]]
-        mockSampleUnit.expects(actorName, DataPoint.Phase.Explorer, *, None).onCall((name: String, phase: DataPoint.Phase, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, name, phase, sample, parent))
-        def sampleUnit(sample: Sample)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
-            mockSampleUnit(actorName, phase, sample, parent)
+        val mockSampleUnit = mockFunction[DataPointContext, Sample, Option[DataPoint[?]], DataPoint[Sample]]
+        mockSampleUnit.expects(context, *, None).onCall((context: DataPointContext, sample: Sample, parent: Option[DataPoint[?]]) => new DataPoint(0, 0, context.hostname, context.actorName, context.phase, sample, parent))
+        def sampleUnit(sample: Sample)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Sample] = {
+            mockSampleUnit(context, sample, parent)
         }
-        val mockPointUnit = mockFunction[String, DataPoint.Phase, Point, Option[DataPoint[?]], DataPoint[Point]]
-        mockPointUnit.expects(*, *, *, *).never()
-        def pointUnit(point: Point)(using phase: Phase, name: String, parent: Option[DataPoint[?]]): DataPoint[Point] = {
-            mockPointUnit(actorName, phase, point, parent)
+        val mockPointUnit = mockFunction[DataPointContext, Point, Option[DataPoint[?]], DataPoint[Point]]
+        mockPointUnit.expects(*, *, *).never()
+        def pointUnit(point: Point)(using context: DataPointContext, parent: Option[DataPoint[?]]): DataPoint[Point] = {
+            mockPointUnit(context, point, parent)
         }
 
         val state = ExplorerState((startLocationX, startLocationY), fn, BigDecimal(threshold), dispatcherProbe.ref, Some(0), State.LookingForHighValueAfterLow)

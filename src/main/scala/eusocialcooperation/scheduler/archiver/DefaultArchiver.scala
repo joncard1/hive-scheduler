@@ -8,8 +8,16 @@ import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.io.FileOutputStream
 import eusocialcooperation.scheduler.datapoint.DataPoint
+import scala.util.Using.Releasable
 
 object DefaultArchiver {
+  given Releasable[DefaultArchiver] = new Releasable[DefaultArchiver] {
+
+    override def release(resource: DefaultArchiver): Unit = {}
+
+    
+  }
+
   private[archiver] def constructWriter(path: String, append: Boolean = false): PrintWriter = {
     new PrintWriter(
       new BufferedWriter(
@@ -28,7 +36,7 @@ class DefaultArchiver private[archiver] (
     queueLengthWriterFactory: () => Writer,
     metadataWriterFactory: () => Writer
 )
-    extends Archiver
+    extends Archiver[DefaultArchiver]
     with LoggingComponent {
 
   def this(experimentPath: String) /*(using Config)*/ = {

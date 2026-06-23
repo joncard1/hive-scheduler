@@ -4,8 +4,10 @@ import eusocialcooperation.scheduler.Demo
 import scala.concurrent.duration.FiniteDuration
 import com.typesafe.config.Config
 import scala.concurrent.ExecutionContext
+import scala.util.Using.Releasable
 
-trait Processor {
+trait Processor[A : Releasable] {
+  this: A =>
 
   /** Run an entire experiment configuration, possibly including multiple runs.
    * 

@@ -33,7 +33,7 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
 
     try {
       val result = Await.result(
-        actor.ask[DataPoint[String]](DataPointActor.Create("hello", Phase.Explorer, "name", _)),
+        actor.ask[DataPoint[String]](DataPointActor.Create("hello", DataPointContext(Phase.Explorer, "host", "name"), _)),
         3.seconds
       )
       result.value shouldEqual "hello"
@@ -48,7 +48,7 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
 
     try {
       val result = Await.result(
-        actor.ask[DataPoint[Int]](DataPointActor.Create(42, Phase.Explorer, "name", _)),
+        actor.ask[DataPoint[Int]](DataPointActor.Create(42, DataPointContext(Phase.Explorer, "host", "name"), _)),
         3.seconds
       )
 
@@ -65,13 +65,13 @@ class DataPointActorSpec extends AnyFunSuite with BeforeAndAfterAll with Matcher
 
     try {
       val result1 = Await.result(
-        actor.ask[DataPoint[String]](DataPointActor.Create("first", Phase.Explorer, "name", _)),
+        actor.ask[DataPoint[String]](DataPointActor.Create("first", DataPointContext(Phase.Explorer, "host", "name"), _)),
         3.seconds
       )
       result1.sequenceNumber shouldEqual 0
 
       val result2 = Await.result(
-        actor.ask[DataPoint[String]](DataPointActor.Create("second", Phase.Explorer, "name", _)),
+        actor.ask[DataPoint[String]](DataPointActor.Create("second", DataPointContext(Phase.Explorer, "host", "name"), _)),
         3.seconds
       )
       result2.sequenceNumber shouldEqual 1

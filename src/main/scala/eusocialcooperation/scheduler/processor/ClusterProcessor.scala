@@ -23,13 +23,28 @@ import eusocialcooperation.scheduler.dispatcher.Dispatcher
 import scala.jdk.DurationConverters.JavaDurationOps
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import scala.util.Using
+import scala.util.Using.Releasable
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import java.util.concurrent.atomic.AtomicReference
+import eusocialcooperation.scheduler._
+
+object ClusterProcessor {
+  given Releasable[ClusterProcessor] = new Releasable[ClusterProcessor] {
+
+    override def release(resource: ClusterProcessor): Unit = {
+      // I think this is to send a Stop message.
+    }
+
+    
+  }
+}
 
 // TODO: Not sure if there's a usefulness of inserting workerFactory
 // TODO: Note: processors assume that the MDC values passed in are already applied for the thread they are called upon.
 // TODO: Note to self: suppliedActorSystem needs to be an ActorSystem, not an ActorRef, so that the processor can monitor whether it joined the cluster or not. I think.
 // The Actor System is of type ActorSystem[Nothing] to be consistent with the limitations of the testing framework.
 // If the actor system is supplied, it must have a dispatcher started at "user/dispatcher"
-class ClusterProcessor(/*, workerFactory: Dispatcher.WorkerFactory, */config: Config, suppliedActorSystem: Option[ActorSystem[Nothing]] = None)(using ExecutionContext) extends Processor with LoggingComponent {
+class ClusterProcessor(/*, workerFactory: Dispatcher.WorkerFactory, */config: Config, suppliedActorSystem: Option[ActorSystem[Nothing]] = None)(using ExecutionContext) extends Processor[ClusterProcessor] with LoggingComponent {
 
   given Map[String, String] = Option(MDC.getCopyOfContextMap().asScala).getOrElse(Map()).toMap
 
@@ -42,9 +57,12 @@ class ClusterProcessor(/*, workerFactory: Dispatcher.WorkerFactory, */config: Co
   //  2. Start the dispatcher and get a reference to it out to the surrounding class somehow.
   val promise = Promise[Unit]()
 
+  val samplesMemory = AtomicReference[Set[DataPoint[Sample]]](Set())
+  val prospectsMemory = AtomicReference[Set[DataPoint[Point]]](Set())
+
   def defaultBehavior = Behaviors.setup[Nothing] { ctx =>
     // Start the dispatcher
-    val actorRef = ctx.spawn(ClusterDispatcher()(using config = config.getConfig("eusocialcooperation.scheduler")), "dispatcher")
+    val actorRef = ctx.spawn(ClusterDispatcher(samplesMemory, prospectsMemory)(using config = config.getConfig("eusocialcooperation.scheduler")), "dispatcher")
 
     // This would replace registerOnMemberUp below. It would only be worth it if I can get the Scheduler of a provided actor system. But if I can get an ActorRer[Dispatcher.Command] instead in the constructor, it would be a little easier to start the ClusterDispatcher as the guardian behavior.
     /*
@@ -124,9 +142,17 @@ class ClusterProcessor(/*, workerFactory: Dispatcher.WorkerFactory, */config: Co
             logger.debug("Run completed")
             //queueSampler.cancel()
         },
-        askTimeoutDuration.plus(2.seconds)
+        askTimeoutDuration.plus(20.seconds) // Extending the timeout because of the database draining
       )
     }
+  }
+
+  def stop() = {
+    logger.debug("Stopping the processor")
+    given Scheduler = system.scheduler
+    val askTimeout: FiniteDuration = 5.seconds
+    given Timeout = askTimeout
+    Await.result(dispatcher.ask(Dispatcher.Stop(_)), askTimeout.plus(2.seconds))
   }
 
   

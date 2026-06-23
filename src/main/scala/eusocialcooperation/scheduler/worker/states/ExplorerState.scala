@@ -8,8 +8,10 @@ import eusocialcooperation.scheduler.worker.states.ExplorerState.State
 import com.typesafe.config.Config
 import eusocialcooperation.scheduler.datapoint.DataPoint
 import eusocialcooperation.scheduler.dispatcher.Dispatcher
+import eusocialcooperation.scheduler.datapoint.DataPointContext
 
 object ExplorerState {
+
     val numPointsToExploreConfigKey = "explorer.numPointsToExplore"
     val explorationRadiusConfigKey = "explorer.explorationRadius"
     val thresholdConfigKey = "explorer.threshold"
@@ -28,8 +30,9 @@ case class ExplorerState(
     , state: State = State.LookingForFirstLowValue
     , memory: Set[Point] = Set.empty)(implicit config: Config) extends WorkerState with LoggingComponent{
 
-    given phase: DataPoint.Phase = DataPoint.Phase.Explorer
     given pointParent: Option[DataPoint[?]] = None
+
+    val phase = DataPoint.Phase.Explorer
 
     val numStepsToExplore = config.getInt(ExplorerState.numPointsToExploreConfigKey)
     val explorationRadius = config.getDouble(ExplorerState.explorationRadiusConfigKey)
@@ -38,9 +41,9 @@ case class ExplorerState(
 
     remainingSteps = Option(remainingSteps.getOrElse(numStepsToExplore))
 
-    override def apply()(using sampleUnit: DataPoint.DataPointUnit[Sample], pointUnit: DataPoint.DataPointUnit[Point], actorName: String, scheduler: Scheduler): WorkerState = {
+    override def apply()(using sampleUnit: DataPoint.DataPointUnit[Sample], pointUnit: DataPoint.DataPointUnit[Point], dpContext: DataPointContext, scheduler: Scheduler): WorkerState = {
         //logger.info(s"Exploring at location: {} with state: {} and remaining steps: {}", startLocation, state, remainingSteps)
-    
+
         var Point(x, y) = startLocation
         
         // Explore a certain number of points.

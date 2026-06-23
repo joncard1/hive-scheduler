@@ -21,6 +21,9 @@ import org.apache.pekko.cluster.ClusterEvent.CurrentClusterState
 import org.apache.pekko.cluster.Cluster
 import org.apache.pekko.cluster.ClusterEvent.MemberUp
 import scala.concurrent.Await
+import java.util.concurrent.atomic.AtomicReference
+import eusocialcooperation.scheduler.datapoint.DataPoint
+import eusocialcooperation.scheduler._
 
 object ClusterDispatcherConfig extends MultiNodeConfig {
     val node1 = role("node1")
@@ -101,7 +104,7 @@ abstract class ClusterDispatcherSpec extends MultiNodeSpec(ClusterDispatcherConf
             given Timeout = Timeout(duration.plus(5.second))
             given config: Config = ConfigFactory.parseString("""
             eusocialcooperation.scheduler {
-                duration = 10 s
+                duration = 2 s
                 dispatcher {
                     numWorkers = 2
                 }
@@ -129,6 +132,8 @@ abstract class ClusterDispatcherSpec extends MultiNodeSpec(ClusterDispatcherConf
                             serverName = "localhost"
                             portNumber = "5432"
                             databaseName = "test"
+                            user=superset
+                            password=superset
                         }
                         numThreads = 10
                     }
@@ -138,13 +143,15 @@ abstract class ClusterDispatcherSpec extends MultiNodeSpec(ClusterDispatcherConf
             val runs = 1
             val experimentName = "test"
             
-            val dispatcher = system.spawn(ClusterDispatcher(), "dispatcher")
+            val samplesMemory = AtomicReference[Set[DataPoint[Sample]]](Set())
+            val prospectsMemory = AtomicReference[Set[DataPoint[Point]]](Set())
+            val dispatcher = system.spawn(ClusterDispatcher(samplesMemory, prospectsMemory), "dispatcher")
             for(i <- 1 to runs) {
-                Await.result(dispatcher.ask[Dispatcher.Response](Dispatcher.StartRun("experiment", i, 10.seconds, _)).map {
+                Await.result(dispatcher.ask[Dispatcher.Response](Dispatcher.StartRun("experiment", i, 2.seconds, _)).map {
                     case RunCompleted() => println("Done")
                     case e => fail(s"${e}")
                 },
-                15.seconds)
+                20.seconds)
             }
         }
     }
